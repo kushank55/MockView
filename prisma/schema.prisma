@@ -1,0 +1,155 @@
+// MockView AI — Prisma Schema
+// PostgreSQL database schema for interviews, resume analysis, and user data
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// Auth Models (NextAuth.js compatible)
+// ============================================
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  passwordHash  String?
+
+  // Profile fields
+  location String?
+  company  String?
+  website  String?
+  bio      String?
+
+  // Preferences
+  theme              String  @default("dark")
+  notifyEmail        Boolean @default(true)
+  notifyInterviewTip Boolean @default(true)
+  notifyWeeklyReport Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  accounts       Account[]
+  sessions       Session[]
+  interviews     Interview[]
+  resumeAnalyses ResumeAnalysis[]
+  goals          Goal[]
+  streak         Streak?
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ============================================
+// App Data Models
+// ============================================
+
+model Interview {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String   // "behavioral" | "technical" | "system-design"
+  topic     String
+  score     Int      // 0-100
+  duration  String   // e.g., "28 min"
+  questions Int      @default(5)
+
+  // Detailed data stored as JSON
+  transcript Json? // Array of { role: "ai"|"user", text: string }
+  feedback   Json? // { communication: number, technical: number, problemSolving: number, confidence: number, ... }
+  coachTips  Json? // Array of { type, text, color }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, type])
+  @@index([userId, createdAt])
+}
+
+model ResumeAnalysis {
+  id     String @id @default(cuid())
+  userId String
+
+  fileName    String
+  fileUrl     String?
+  atsScore    Int // 0-100
+  keywordData Json // Array of { keyword, count, relevance, found }
+  sectionScores Json // Array of { label, score, icon }
+  improvements  Json // Array of { severity, title, description }
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Goal {
+  id      String @id @default(cuid())
+  userId  String
+  label   String
+  target  Int
+  current Int    @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Streak {
+  id            String   @id @default(cuid())
+  userId        String   @unique
+  currentStreak Int      @default(0)
+  bestStreak    Int      @default(0)
+  lastActiveAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
