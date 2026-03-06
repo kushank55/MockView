@@ -1,0 +1,19 @@
+.shell {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main {
+    flex: 1;
+    margin-left: var(--sidebar-width);
+    min-height: 100vh;
+    transition: margin-left var(--transition-base);
+    padding-bottom: var(--space-2xl);
+}
+
+@media (max-width: 768px) {
+    .main {
+        margin-left: 0;
+        padding-bottom: 80px;
+    }
+}

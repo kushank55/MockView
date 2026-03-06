@@ -1,0 +1,123 @@
+.btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-weight: 600;
+    border-radius: var(--radius-md);
+    transition: all var(--transition-base);
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+}
+
+.btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Variants */
+.primary {
+    background: var(--gradient-accent);
+    color: white;
+    box-shadow: 0 2px 10px var(--accent-blue-glow);
+}
+
+.primary:hover:not(:disabled) {
+    box-shadow: 0 4px 20px var(--accent-blue-glow);
+    transform: translateY(-1px);
+}
+
+.secondary {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-medium);
+    color: var(--text-primary);
+}
+
+.secondary:hover:not(:disabled) {
+    background: var(--bg-card-hover);
+    border-color: var(--border-accent);
+}
+
+.ghost {
+    background: transparent;
+    color: var(--text-secondary);
+}
+
+.ghost:hover:not(:disabled) {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
+}
+
+.danger {
+    background: var(--accent-rose);
+    color: white;
+    box-shadow: 0 2px 10px rgba(244, 63, 94, 0.2);
+}
+
+.danger:hover:not(:disabled) {
+    box-shadow: 0 4px 20px rgba(244, 63, 94, 0.3);
+    transform: translateY(-1px);
+}
+
+.accent {
+    background: linear-gradient(135deg, var(--accent-purple), var(--accent-cyan));
+    color: white;
+    box-shadow: 0 2px 10px var(--accent-purple-glow);
+}
+
+.accent:hover:not(:disabled) {
+    box-shadow: 0 4px 20px var(--accent-purple-glow);
+    transform: translateY(-1px);
+}
+
+/* Sizes */
+.sm {
+    padding: 6px 14px;
+    font-size: var(--text-sm);
+    border-radius: var(--radius-sm);
+}
+
+.md {
+    padding: 10px 20px;
+    font-size: var(--text-sm);
+}
+
+.lg {
+    padding: 14px 28px;
+    font-size: var(--text-base);
+    border-radius: var(--radius-lg);
+}
+
+.fullWidth {
+    width: 100%;
+}
+
+/* Icon */
+.icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Loading Spinner */
+.loading {
+    pointer-events: none;
+}
+
+.spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
+}

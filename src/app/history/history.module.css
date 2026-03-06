@@ -1,0 +1,272 @@
+.page {
+    padding: var(--space-lg) var(--space-xl);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+/* Main Grid */
+.mainGrid {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: var(--space-lg);
+}
+
+.leftCol,
+.rightCol {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+/* Filter Bar */
+.filterBar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--space-md);
+}
+
+.filterGroup {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    border: 1px solid var(--border-subtle);
+}
+
+.filterBtn {
+    padding: 6px 14px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    border-radius: var(--radius-sm);
+    color: var(--text-tertiary);
+    background: transparent;
+    cursor: pointer;
+    transition: all var(--transition-base);
+}
+
+.filterBtn:hover {
+    color: var(--text-primary);
+}
+
+.filterActive {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+/* Interview List */
+.interviewList {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+}
+
+.interviewCard {
+    cursor: pointer;
+}
+
+.interviewTop {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.interviewIcon {
+    width: 42px;
+    height: 42px;
+    border-radius: var(--radius-md);
+    background: rgba(59, 130, 246, 0.12);
+    color: var(--accent-blue);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.interviewInfo {
+    flex: 1;
+    min-width: 0;
+}
+
+.interviewType {
+    font-size: var(--text-sm);
+    font-weight: 700;
+}
+
+.interviewTopic {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.interviewScore {
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+}
+
+.scoreNum {
+    font-size: var(--text-2xl);
+    font-weight: 800;
+}
+
+.scoreOf {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+.interviewBottom {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--border-subtle);
+}
+
+.interviewMeta {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+/* Card Title */
+.cardTitle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: var(--text-base);
+    font-weight: 700;
+    margin-bottom: var(--space-lg);
+}
+
+/* Radar Chart */
+.radarContainer {
+    display: flex;
+    justify-content: center;
+    margin-bottom: var(--space-md);
+}
+
+.radarSvg {
+    width: 100%;
+    max-width: 280px;
+}
+
+.radarLegend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.radarLegendItem {
+    display: flex;
+    justify-content: space-between;
+    font-size: var(--text-xs);
+    color: var(--text-secondary);
+}
+
+.radarScore {
+    font-weight: 700;
+    color: var(--accent-blue);
+}
+
+/* Skill Heatmap */
+.heatmap {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-md);
+    margin-bottom: var(--space-md);
+}
+
+.heatmapRow {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.heatmapCategory {
+    font-size: var(--text-xs);
+    font-weight: 700;
+    color: var(--text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.heatmapCells {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.heatmapCell {
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    text-align: center;
+    cursor: default;
+    transition: all var(--transition-base);
+}
+
+.heatmapCell:hover {
+    transform: scale(1.05);
+}
+
+.heatmapLabel {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.heatmapValue {
+    font-size: var(--text-xs);
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+/* Scale */
+.heatmapScale {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    font-size: 10px;
+    color: var(--text-tertiary);
+}
+
+.scaleBar {
+    flex: 1;
+    height: 6px;
+    border-radius: var(--radius-full);
+    background: linear-gradient(to right, var(--accent-rose), var(--accent-amber), var(--accent-emerald));
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+    .mainGrid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .page {
+        padding: var(--space-md);
+    }
+
+    .filterBar {
+        flex-direction: column;
+        gap: var(--space-sm);
+    }
+
+    .filterGroup {
+        flex-wrap: wrap;
+    }
+
+    .heatmapCells {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
