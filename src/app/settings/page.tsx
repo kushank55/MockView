@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     User,
@@ -20,12 +20,29 @@ import {
     Monitor,
     Mic,
     Clock,
+    Check,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import styles from './settings.module.css';
+
+// ── Types ──
+interface UserProfile {
+    id: string;
+    name: string | null;
+    email: string | null;
+    image: string | null;
+    location: string | null;
+    company: string | null;
+    website: string | null;
+    bio: string | null;
+    theme: string;
+    notifyEmail: boolean;
+    notifyInterviewTip: boolean;
+    notifyWeeklyReport: boolean;
+}
 
 const settingsSections = [
     { id: 'profile', label: 'Profile', icon: User },
@@ -37,6 +54,22 @@ const settingsSections = [
 
 export default function SettingsPage() {
     const [activeSection, setActiveSection] = useState('profile');
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+
+    // ── User profile state (from API) ──
+    const [profile, setProfile] = useState<UserProfile | null>(null);
+
+    // ── Local form state ──
+    const [formData, setFormData] = useState({
+        name: '',
+        email: '',
+        company: '',
+        location: '',
+        bio: '',
+    });
+
     const [theme, setTheme] = useState('dark');
     const [notifications, setNotifications] = useState({
         email: true,
@@ -50,6 +83,84 @@ export default function SettingsPage() {
         coach: true,
         autoRecord: true,
     });
+
+    // ── Fetch user profile on mount ──
+    useEffect(() => {
+        fetch('/api/user')
+            .then((res) => res.json())
+            .then((data) => {
+                setProfile(data);
+                setFormData({
+                    name: data.name || '',
+                    email: data.email || '',
+                    company: data.company || '',
+                    location: data.location || '',
+                    bio: data.bio || '',
+                });
+                setTheme(data.theme || 'dark');
+                setNotifications({
+                    email: data.notifyEmail ?? true,
+                    push: true,
+                    weekly: data.notifyWeeklyReport ?? true,
+                    achievements: data.notifyInterviewTip ?? true,
+                });
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error('Failed to load user settings:', err);
+                setLoading(false);
+            });
+    }, []);
+
+    // ── Save profile changes ──
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const res = await fetch('/api/user', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    userId: profile?.id || 'demo-user',
+                    name: formData.name,
+                    email: formData.email,
+                    company: formData.company,
+                    location: formData.location,
+                    bio: formData.bio,
+                    theme,
+                    notifyEmail: notifications.email,
+                    notifyWeeklyReport: notifications.weekly,
+                    notifyInterviewTip: notifications.achievements,
+                }),
+            });
+            const updated = await res.json();
+            setProfile(updated);
+            setSaved(true);
+            setTimeout(() => setSaved(false), 2000);
+        } catch (err) {
+            console.error('Failed to save settings:', err);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    // ── Get initials for avatar ──
+    const initials = formData.name
+        ? formData.name
+            .split(' ')
+            .map((w) => w[0])
+            .join('')
+            .toUpperCase()
+            .slice(0, 2)
+        : 'U';
+
+    if (loading) {
+        return (
+            <div className={styles.page}>
+                <Header title="Settings" subtitle="Loading your preferences..." />
+                <div className={styles.skeleton} style={{ height: '400px' }} />
+            </div>
+        );
+    }
 
     return (
         <div className={styles.page}>
@@ -86,11 +197,11 @@ export default function SettingsPage() {
                                 {/* Avatar */}
                                 <div className={styles.avatarSection}>
                                     <div className={styles.avatar}>
-                                        <span>KG</span>
+                                        <span>{initials}</span>
                                     </div>
                                     <div className={styles.avatarInfo}>
-                                        <p className={styles.avatarName}>Kushank Garg</p>
-                                        <p className={styles.avatarEmail}>kushank@example.com</p>
+                                        <p className={styles.avatarName}>{formData.name || 'Your Name'}</p>
+                                        <p className={styles.avatarEmail}>{formData.email || 'your@email.com'}</p>
                                         <Button size="sm" variant="ghost" icon={<Camera size={14} />}>
                                             Change Avatar
                                         </Button>
@@ -106,7 +217,8 @@ export default function SettingsPage() {
                                         <input
                                             type="text"
                                             className={styles.fieldInput}
-                                            defaultValue="Kushank Garg"
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                                         />
                                     </div>
                                     <div className={styles.field}>
@@ -116,7 +228,8 @@ export default function SettingsPage() {
                                         <input
                                             type="email"
                                             className={styles.fieldInput}
-                                            defaultValue="kushank@example.com"
+                                            value={formData.email}
+                                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                                         />
                                     </div>
                                     <div className={styles.field}>
@@ -126,7 +239,8 @@ export default function SettingsPage() {
                                         <input
                                             type="text"
                                             className={styles.fieldInput}
-                                            defaultValue="Software Engineer"
+                                            value={formData.company}
+                                            onChange={(e) => setFormData({ ...formData, company: e.target.value })}
                                         />
                                     </div>
                                     <div className={styles.field}>
@@ -136,7 +250,8 @@ export default function SettingsPage() {
                                         <input
                                             type="text"
                                             className={styles.fieldInput}
-                                            defaultValue="Bengaluru, India"
+                                            value={formData.location}
+                                            onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                                         />
                                     </div>
                                     <div className={styles.field} style={{ gridColumn: '1 / -1' }}>
@@ -145,14 +260,21 @@ export default function SettingsPage() {
                                         </label>
                                         <textarea
                                             className={styles.fieldTextarea}
-                                            defaultValue="Passionate software engineer focused on building impactful products."
+                                            value={formData.bio}
+                                            onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
                                             rows={3}
                                         />
                                     </div>
                                 </div>
 
                                 <div className={styles.actions}>
-                                    <Button>Save Changes</Button>
+                                    <Button onClick={handleSave} loading={saving}>
+                                        {saved ? (
+                                            <><Check size={14} /> Saved!</>
+                                        ) : (
+                                            'Save Changes'
+                                        )}
+                                    </Button>
                                     <Button variant="ghost">Cancel</Button>
                                 </div>
                             </Card>
@@ -194,6 +316,11 @@ export default function SettingsPage() {
                                             </button>
                                         </div>
                                     ))}
+                                </div>
+                                <div className={styles.actions} style={{ marginTop: 'var(--space-lg)' }}>
+                                    <Button onClick={handleSave} loading={saving}>
+                                        {saved ? <><Check size={14} /> Saved!</> : 'Save Preferences'}
+                                    </Button>
                                 </div>
                             </Card>
                         </motion.div>
@@ -308,6 +435,11 @@ export default function SettingsPage() {
                                             {theme === t.id && <Badge variant="blue">Active</Badge>}
                                         </button>
                                     ))}
+                                </div>
+                                <div className={styles.actions} style={{ marginTop: 'var(--space-lg)' }}>
+                                    <Button onClick={handleSave} loading={saving}>
+                                        {saved ? <><Check size={14} /> Saved!</> : 'Save Theme'}
+                                    </Button>
                                 </div>
                             </Card>
                         </motion.div>

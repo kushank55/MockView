@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Mic,
@@ -10,7 +10,6 @@ import {
     Filter,
     BarChart3,
     TrendingUp,
-    Search,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -19,69 +18,18 @@ import Button from '@/components/ui/Button';
 import { getScoreColor } from '@/lib/utils';
 import styles from './history.module.css';
 
-const interviews = [
-    {
-        id: 1,
-        type: 'Behavioral',
-        topic: 'Leadership & Teamwork',
-        score: 92,
-        date: '2026-03-05',
-        duration: '28 min',
-        questions: 5,
-        badge: 'emerald' as const,
-    },
-    {
-        id: 2,
-        type: 'Technical',
-        topic: 'System Design — URL Shortener',
-        score: 85,
-        date: '2026-03-04',
-        duration: '35 min',
-        questions: 4,
-        badge: 'emerald' as const,
-    },
-    {
-        id: 3,
-        type: 'Behavioral',
-        topic: 'Conflict Resolution',
-        score: 78,
-        date: '2026-03-03',
-        duration: '22 min',
-        questions: 5,
-        badge: 'amber' as const,
-    },
-    {
-        id: 4,
-        type: 'Technical',
-        topic: 'React Performance Optimization',
-        score: 88,
-        date: '2026-03-02',
-        duration: '30 min',
-        questions: 6,
-        badge: 'emerald' as const,
-    },
-    {
-        id: 5,
-        type: 'System Design',
-        topic: 'Chat System Architecture',
-        score: 72,
-        date: '2026-03-01',
-        duration: '40 min',
-        questions: 3,
-        badge: 'amber' as const,
-    },
-    {
-        id: 6,
-        type: 'Behavioral',
-        topic: 'Problem Solving Under Pressure',
-        score: 95,
-        date: '2026-02-28',
-        duration: '25 min',
-        questions: 5,
-        badge: 'emerald' as const,
-    },
-];
+// ── Types ──
+interface Interview {
+    id: string;
+    type: string;
+    topic: string;
+    score: number;
+    createdAt: string;
+    duration: string;
+    questions: number;
+}
 
+// ── Static data (will be computed from AI feedback later) ──
 const radarSkills = [
     { label: 'Communication', value: 85 },
     { label: 'Technical Depth', value: 78 },
@@ -128,13 +76,42 @@ const item = {
     show: { opacity: 1, y: 0 },
 };
 
+// ── Helper ──
+function formatDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric',
+    });
+}
+
+function getBadgeVariant(score: number): 'emerald' | 'amber' | 'rose' {
+    if (score >= 80) return 'emerald';
+    if (score >= 60) return 'amber';
+    return 'rose';
+}
+
 export default function HistoryPage() {
     const [filter, setFilter] = useState('all');
+    const [interviews, setInterviews] = useState<Interview[]>([]);
+    const [loading, setLoading] = useState(true);
 
-    const filteredInterviews =
-        filter === 'all'
-            ? interviews
-            : interviews.filter((i) => i.type.toLowerCase() === filter);
+    // ── Fetch interviews from API ──
+    useEffect(() => {
+        const params = new URLSearchParams();
+        if (filter !== 'all') params.set('type', filter);
+
+        fetch(`/api/interviews?${params.toString()}`)
+            .then((res) => res.json())
+            .then((data) => {
+                setInterviews(data.interviews || []);
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error('Failed to load interviews:', err);
+                setLoading(false);
+            });
+    }, [filter]);
 
     return (
         <div className={styles.page}>
@@ -146,13 +123,13 @@ export default function HistoryPage() {
                     {/* Filters */}
                     <div className={styles.filterBar}>
                         <div className={styles.filterGroup}>
-                            {['all', 'behavioral', 'technical', 'system design'].map((f) => (
+                            {['all', 'behavioral', 'technical', 'system-design'].map((f) => (
                                 <button
                                     key={f}
                                     className={`${styles.filterBtn} ${filter === f ? styles.filterActive : ''}`}
                                     onClick={() => setFilter(f)}
                                 >
-                                    {f.charAt(0).toUpperCase() + f.slice(1)}
+                                    {f === 'system-design' ? 'System Design' : f.charAt(0).toUpperCase() + f.slice(1)}
                                 </button>
                             ))}
                         </div>
@@ -162,51 +139,67 @@ export default function HistoryPage() {
                     </div>
 
                     {/* Interview Cards */}
-                    <motion.div
-                        className={styles.interviewList}
-                        variants={container}
-                        initial="hidden"
-                        animate="show"
-                    >
-                        {filteredInterviews.map((interview) => (
-                            <motion.div key={interview.id} variants={item}>
-                                <Card className={styles.interviewCard} hover>
-                                    <div className={styles.interviewTop}>
-                                        <div className={styles.interviewIcon}>
-                                            <Mic size={18} />
+                    {loading ? (
+                        <div className={styles.interviewList}>
+                            {[1, 2, 3].map((i) => (
+                                <div key={i} className={styles.skeleton} />
+                            ))}
+                        </div>
+                    ) : interviews.length === 0 ? (
+                        <Card>
+                            <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                                No interviews found. Start practicing!
+                            </p>
+                        </Card>
+                    ) : (
+                        <motion.div
+                            className={styles.interviewList}
+                            variants={container}
+                            initial="hidden"
+                            animate="show"
+                        >
+                            {interviews.map((interview) => (
+                                <motion.div key={interview.id} variants={item}>
+                                    <Card className={styles.interviewCard} hover>
+                                        <div className={styles.interviewTop}>
+                                            <div className={styles.interviewIcon}>
+                                                <Mic size={18} />
+                                            </div>
+                                            <div className={styles.interviewInfo}>
+                                                <h4 className={styles.interviewType}>
+                                                    {interview.type.charAt(0).toUpperCase() + interview.type.slice(1).replace('-', ' ')}
+                                                </h4>
+                                                <p className={styles.interviewTopic}>{interview.topic}</p>
+                                            </div>
+                                            <div className={styles.interviewScore}>
+                                                <span
+                                                    className={styles.scoreNum}
+                                                    style={{ color: getScoreColor(interview.score) }}
+                                                >
+                                                    {interview.score}
+                                                </span>
+                                                <span className={styles.scoreOf}>/100</span>
+                                            </div>
                                         </div>
-                                        <div className={styles.interviewInfo}>
-                                            <h4 className={styles.interviewType}>{interview.type}</h4>
-                                            <p className={styles.interviewTopic}>{interview.topic}</p>
-                                        </div>
-                                        <div className={styles.interviewScore}>
-                                            <span
-                                                className={styles.scoreNum}
-                                                style={{ color: getScoreColor(interview.score) }}
-                                            >
-                                                {interview.score}
+                                        <div className={styles.interviewBottom}>
+                                            <span className={styles.interviewMeta}>
+                                                <Calendar size={12} /> {formatDate(interview.createdAt)}
                                             </span>
-                                            <span className={styles.scoreOf}>/100</span>
+                                            <span className={styles.interviewMeta}>
+                                                <Clock size={12} /> {interview.duration}
+                                            </span>
+                                            <span className={styles.interviewMeta}>
+                                                {interview.questions} questions
+                                            </span>
+                                            <Badge variant={getBadgeVariant(interview.score)} size="sm">
+                                                {interview.score >= 80 ? 'Passed' : 'Needs Work'}
+                                            </Badge>
                                         </div>
-                                    </div>
-                                    <div className={styles.interviewBottom}>
-                                        <span className={styles.interviewMeta}>
-                                            <Calendar size={12} /> {interview.date}
-                                        </span>
-                                        <span className={styles.interviewMeta}>
-                                            <Clock size={12} /> {interview.duration}
-                                        </span>
-                                        <span className={styles.interviewMeta}>
-                                            {interview.questions} questions
-                                        </span>
-                                        <Badge variant={interview.badge} size="sm">
-                                            {interview.score >= 80 ? 'Passed' : 'Needs Work'}
-                                        </Badge>
-                                    </div>
-                                </Card>
-                            </motion.div>
-                        ))}
-                    </motion.div>
+                                    </Card>
+                                </motion.div>
+                            ))}
+                        </motion.div>
+                    )}
                 </div>
 
                 {/* Right — Analytics */}

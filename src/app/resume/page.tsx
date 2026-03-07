@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Upload,
@@ -25,84 +25,83 @@ import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
 import styles from './resume.module.css';
 
-const keywordData = [
-    { keyword: 'React', count: 8, relevance: 95, found: true },
-    { keyword: 'TypeScript', count: 5, relevance: 90, found: true },
-    { keyword: 'Node.js', count: 3, relevance: 85, found: true },
-    { keyword: 'AWS', count: 0, relevance: 80, found: false },
-    { keyword: 'Docker', count: 1, relevance: 75, found: true },
-    { keyword: 'CI/CD', count: 0, relevance: 70, found: false },
-    { keyword: 'Agile', count: 2, relevance: 65, found: true },
-    { keyword: 'REST API', count: 4, relevance: 88, found: true },
-    { keyword: 'GraphQL', count: 0, relevance: 60, found: false },
-    { keyword: 'Python', count: 1, relevance: 55, found: true },
-    { keyword: 'SQL', count: 2, relevance: 72, found: true },
-    { keyword: 'Kubernetes', count: 0, relevance: 68, found: false },
-];
+// ── Types ──
+interface ResumeAnalysis {
+    id: string;
+    fileName: string;
+    atsScore: number;
+    keywordData: { keyword: string; count: number; relevance: number; found: boolean }[];
+    sectionScores: { label: string; score: number }[];
+    improvements: { severity: string; title: string; description: string }[];
+    createdAt: string;
+}
 
-const improvements = [
-    {
-        severity: 'critical',
-        title: 'Add quantifiable achievements',
-        description: 'Replace generic statements with specific metrics (e.g., "Improved load time by 40%").',
-        icon: XCircle,
-        color: 'var(--accent-rose)',
-    },
-    {
-        severity: 'important',
-        title: 'Include missing keywords: AWS, Docker, CI/CD',
-        description: 'These are frequently required in your target job listings. Add relevant experience.',
-        icon: AlertTriangle,
-        color: 'var(--accent-amber)',
-    },
-    {
-        severity: 'important',
-        title: 'Strengthen your summary section',
-        description: 'Your summary is too generic. Tailor it to your target role with specific value propositions.',
-        icon: AlertTriangle,
-        color: 'var(--accent-amber)',
-    },
-    {
-        severity: 'suggestion',
-        title: 'Add a technical projects section',
-        description: 'Showcase 2-3 impactful projects with tech stack, challenge, and outcome.',
-        icon: Lightbulb,
-        color: 'var(--accent-blue)',
-    },
-    {
-        severity: 'suggestion',
-        title: 'Optimize formatting for ATS',
-        description: 'Use standard section headers and avoid tables/graphics that ATS cannot parse.',
-        icon: Lightbulb,
-        color: 'var(--accent-blue)',
-    },
-];
+// ── Icon mapping for section scores ──
+const sectionIconMap: Record<string, React.ElementType> = {
+    'Contact Info': CheckCircle2,
+    'Summary': AlertTriangle,
+    'Experience': TrendingUp,
+    'Skills': Target,
+    'Education': Shield,
+    'Keywords': Search,
+};
 
-const sectionScores = [
-    { label: 'Contact Info', score: 100, icon: CheckCircle2 },
-    { label: 'Summary', score: 60, icon: AlertTriangle },
-    { label: 'Experience', score: 78, icon: TrendingUp },
-    { label: 'Skills', score: 85, icon: Target },
-    { label: 'Education', score: 90, icon: Shield },
-    { label: 'Keywords', score: 65, icon: Search },
-];
+// ── Severity config ──
+const severityConfig: Record<string, { icon: React.ElementType; color: string }> = {
+    critical: { icon: XCircle, color: 'var(--accent-rose)' },
+    warning: { icon: AlertTriangle, color: 'var(--accent-amber)' },
+    suggestion: { icon: Lightbulb, color: 'var(--accent-blue)' },
+};
 
 export default function ResumePage() {
-    const [isAnalyzed, setIsAnalyzed] = useState(false);
+    const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
+    const [loading, setLoading] = useState(true);
     const [isDragOver, setIsDragOver] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // ── Fetch existing analysis on mount ──
+    useEffect(() => {
+        fetch('/api/resume')
+            .then((res) => res.json())
+            .then((data) => {
+                if (data.analyses && data.analyses.length > 0) {
+                    setAnalysis(data.analyses[0]); // Show latest analysis
+                }
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error('Failed to load resume analysis:', err);
+                setLoading(false);
+            });
+    }, []);
+
     const handleAnalyze = () => {
         setIsAnalyzing(true);
+        // Simulate analysis (will be real AI later)
         setTimeout(() => {
             setIsAnalyzing(false);
-            setIsAnalyzed(true);
+            // Re-fetch to get latest analysis
+            fetch('/api/resume')
+                .then((res) => res.json())
+                .then((data) => {
+                    if (data.analyses && data.analyses.length > 0) {
+                        setAnalysis(data.analyses[0]);
+                    }
+                });
         }, 2500);
     };
 
-    const atsScore = 76;
+    if (loading) {
+        return (
+            <div className={styles.page}>
+                <Header title="Resume Analysis" subtitle="Loading your analysis..." />
+                <div className={styles.skeleton} style={{ height: '300px', maxWidth: '600px', margin: '0 auto' }} />
+            </div>
+        );
+    }
 
-    if (!isAnalyzed) {
+    // ── Upload screen (no analysis yet) ──
+    if (!analysis) {
         return (
             <div className={styles.page}>
                 <Header title="Resume Analysis" subtitle="Upload your resume for AI-powered insights" />
@@ -156,6 +155,12 @@ export default function ResumePage() {
         );
     }
 
+    // ── Analysis results (from database) ──
+    const atsScore = analysis.atsScore;
+    const keywordData = analysis.keywordData;
+    const sectionScores = analysis.sectionScores;
+    const improvements = analysis.improvements;
+
     return (
         <div className={styles.page}>
             <Header title="Resume Analysis" subtitle="AI-powered resume intelligence report" />
@@ -186,7 +191,7 @@ export default function ResumePage() {
                             <h3 className={styles.scoreTitle}>Resume Health Report</h3>
                             <p className={styles.scoreDesc}>
                                 Your resume scores <strong>{atsScore}/100</strong> in ATS compatibility.
-                                There are <strong>5 improvements</strong> that could boost your score
+                                There are <strong>{improvements.length} improvements</strong> that could boost your score
                                 significantly.
                             </p>
                             <Button size="sm" variant="secondary" icon={<ArrowRight size={14} />}>
@@ -211,27 +216,30 @@ export default function ResumePage() {
                                 <BarChart3 size={16} /> Section Breakdown
                             </h3>
                             <div className={styles.sectionList}>
-                                {sectionScores.map((section, i) => (
-                                    <div key={i} className={styles.sectionItem}>
-                                        <section.icon
-                                            size={16}
-                                            color={getScoreColor(section.score)}
-                                        />
-                                        <span className={styles.sectionName}>{section.label}</span>
-                                        <div className={styles.sectionBar}>
-                                            <motion.div
-                                                className={styles.sectionFill}
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${section.score}%` }}
-                                                transition={{ delay: 0.3 + i * 0.1, duration: 0.6 }}
-                                                style={{ background: getScoreColor(section.score) }}
+                                {sectionScores.map((section, i) => {
+                                    const Icon = sectionIconMap[section.label] || CheckCircle2;
+                                    return (
+                                        <div key={i} className={styles.sectionItem}>
+                                            <Icon
+                                                size={16}
+                                                color={getScoreColor(section.score)}
                                             />
+                                            <span className={styles.sectionName}>{section.label}</span>
+                                            <div className={styles.sectionBar}>
+                                                <motion.div
+                                                    className={styles.sectionFill}
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${section.score}%` }}
+                                                    transition={{ delay: 0.3 + i * 0.1, duration: 0.6 }}
+                                                    style={{ background: getScoreColor(section.score) }}
+                                                />
+                                            </div>
+                                            <span className={styles.sectionScore} style={{ color: getScoreColor(section.score) }}>
+                                                {section.score}%
+                                            </span>
                                         </div>
-                                        <span className={styles.sectionScore} style={{ color: getScoreColor(section.score) }}>
-                                            {section.score}%
-                                        </span>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </Card>
                     </motion.div>
@@ -291,36 +299,40 @@ export default function ResumePage() {
                                 <Lightbulb size={16} /> AI Improvement Suggestions
                             </h3>
                             <div className={styles.improvementList}>
-                                {improvements.map((imp, i) => (
-                                    <motion.div
-                                        key={i}
-                                        className={styles.improvementItem}
-                                        initial={{ opacity: 0, x: 10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        transition={{ delay: 0.4 + i * 0.1 }}
-                                    >
-                                        <div className={styles.impIcon} style={{ color: imp.color }}>
-                                            <imp.icon size={16} />
-                                        </div>
-                                        <div className={styles.impContent}>
-                                            <div className={styles.impHeader}>
-                                                <span className={styles.impTitle}>{imp.title}</span>
-                                                <Badge
-                                                    variant={
-                                                        imp.severity === 'critical'
-                                                            ? 'rose'
-                                                            : imp.severity === 'important'
-                                                                ? 'amber'
-                                                                : 'blue'
-                                                    }
-                                                >
-                                                    {imp.severity}
-                                                </Badge>
+                                {improvements.map((imp, i) => {
+                                    const config = severityConfig[imp.severity] || severityConfig.suggestion;
+                                    const ImpIcon = config.icon;
+                                    return (
+                                        <motion.div
+                                            key={i}
+                                            className={styles.improvementItem}
+                                            initial={{ opacity: 0, x: 10 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: 0.4 + i * 0.1 }}
+                                        >
+                                            <div className={styles.impIcon} style={{ color: config.color }}>
+                                                <ImpIcon size={16} />
                                             </div>
-                                            <p className={styles.impDesc}>{imp.description}</p>
-                                        </div>
-                                    </motion.div>
-                                ))}
+                                            <div className={styles.impContent}>
+                                                <div className={styles.impHeader}>
+                                                    <span className={styles.impTitle}>{imp.title}</span>
+                                                    <Badge
+                                                        variant={
+                                                            imp.severity === 'critical'
+                                                                ? 'rose'
+                                                                : imp.severity === 'warning'
+                                                                    ? 'amber'
+                                                                    : 'blue'
+                                                        }
+                                                    >
+                                                        {imp.severity}
+                                                    </Badge>
+                                                </div>
+                                                <p className={styles.impDesc}>{imp.description}</p>
+                                            </div>
+                                        </motion.div>
+                                    );
+                                })}
                             </div>
                         </Card>
                     </motion.div>
