@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import {
     Mic,
@@ -24,85 +24,43 @@ import Badge from '@/components/ui/Badge';
 import ProgressRing from '@/components/ui/ProgressRing';
 import styles from './dashboard.module.css';
 
-const statsData = [
-    {
-        label: 'Interviews',
-        value: '24',
-        change: '+3 this week',
-        icon: Mic,
-        color: 'var(--accent-blue)',
-        bgColor: 'rgba(59, 130, 246, 0.12)',
-    },
-    {
-        label: 'Avg Score',
-        value: '82%',
-        change: '+5% improvement',
-        icon: TrendingUp,
-        color: 'var(--accent-emerald)',
-        bgColor: 'rgba(16, 185, 129, 0.12)',
-    },
-    {
-        label: 'Day Streak',
-        value: '12',
-        change: 'Personal best!',
-        icon: Flame,
-        color: 'var(--accent-amber)',
-        bgColor: 'rgba(245, 158, 11, 0.12)',
-    },
-    {
-        label: 'XP Points',
-        value: '2,450',
-        change: 'Level 8',
-        icon: Zap,
-        color: 'var(--accent-purple)',
-        bgColor: 'rgba(139, 92, 246, 0.12)',
-    },
-];
+// ── Types for API response ──
+interface DashboardData {
+    stats: {
+        totalInterviews: number;
+        avgScore: number;
+        streak: number;
+        xp: number;
+    };
+    recentActivity: {
+        type: string;
+        title: string;
+        subtitle: string;
+        score: number;
+        time: string;
+    }[];
+    weeklyScores: number[];
+    scoreBreakdown: {
+        communication: number;
+        technical: number;
+        problemSolving: number;
+        confidence: number;
+    };
+    goals: {
+        label: string;
+        target: number;
+        current: number;
+        progress: number;
+    }[];
+    streak: {
+        current: number;
+        best: number;
+        lastActive: string | null;
+    };
+    resumeScore: number | null;
+}
 
-const recentActivity = [
-    {
-        type: 'interview',
-        title: 'System Design Interview',
-        subtitle: 'Frontend Architecture',
-        score: 88,
-        time: '2 hours ago',
-        icon: Mic,
-    },
-    {
-        type: 'resume',
-        title: 'Resume Analyzed',
-        subtitle: 'ATS Score: 76/100',
-        score: 76,
-        time: '5 hours ago',
-        icon: FileText,
-    },
-    {
-        type: 'interview',
-        title: 'Behavioral Interview',
-        subtitle: 'Leadership Questions',
-        score: 92,
-        time: 'Yesterday',
-        icon: Mic,
-    },
-    {
-        type: 'achievement',
-        title: 'Achievement Unlocked',
-        subtitle: '🎯 10-Day Streak Master',
-        score: 0,
-        time: '2 days ago',
-        icon: Trophy,
-    },
-];
-
-const upcomingGoals = [
-    { label: 'Complete 30 Interviews', progress: 80, current: 24, target: 30 },
-    { label: 'Reach Level 10', progress: 60, current: 8, target: 10 },
-    { label: 'Improve Resume to 90+', progress: 84, current: 76, target: 90 },
-];
-
-const weeklyData = [65, 72, 68, 78, 85, 82, 88];
-const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
+// ── Animation variants ──
 const container = {
     hidden: { opacity: 0 },
     show: { opacity: 1, transition: { staggerChildren: 0.08 } },
@@ -113,8 +71,123 @@ const item = {
     show: { opacity: 1, y: 0 },
 };
 
+const weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// ── Helper to format time ago ──
+function timeAgo(dateStr: string): string {
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffHours < 24) return `${diffHours} hours ago`;
+    if (diffDays === 1) return 'Yesterday';
+    return `${diffDays} days ago`;
+}
+
 export default function DashboardPage() {
-    const maxScore = Math.max(...weeklyData);
+    // ── State: data from API, loading flag ──
+    const [data, setData] = useState<DashboardData | null>(null);
+    const [loading, setLoading] = useState(true);
+
+    // ── Fetch dashboard data on mount ──
+    useEffect(() => {
+        fetch('/api/dashboard')
+            .then((res) => res.json())
+            .then((apiData) => {
+                setData(apiData);
+                setLoading(false);
+            })
+            .catch((err) => {
+                console.error('Failed to load dashboard:', err);
+                setLoading(false);
+            });
+    }, []);
+
+    // ── Loading state ──
+    if (loading) {
+        return (
+            <div className={styles.page}>
+                <Header title="Dashboard" subtitle="Loading your progress..." />
+                <div className={styles.loadingGrid}>
+                    {[1, 2, 3, 4].map((i) => (
+                        <div key={i} className={styles.skeleton} />
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // ── Error / no data state ──
+    if (!data) {
+        return (
+            <div className={styles.page}>
+                <Header title="Dashboard" subtitle="Something went wrong" />
+                <Card>
+                    <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                        Unable to load dashboard data. Please check your database connection.
+                    </p>
+                </Card>
+            </div>
+        );
+    }
+
+    // ── Build stats cards from API data ──
+    const statsData = [
+        {
+            label: 'Interviews',
+            value: String(data.stats.totalInterviews),
+            change: `${data.stats.totalInterviews} completed`,
+            icon: Mic,
+            color: 'var(--accent-blue)',
+            bgColor: 'rgba(59, 130, 246, 0.12)',
+        },
+        {
+            label: 'Avg Score',
+            value: `${data.stats.avgScore}%`,
+            change: data.stats.avgScore >= 80 ? 'Great performance!' : 'Keep improving!',
+            icon: TrendingUp,
+            color: 'var(--accent-emerald)',
+            bgColor: 'rgba(16, 185, 129, 0.12)',
+        },
+        {
+            label: 'Day Streak',
+            value: String(data.streak.current),
+            change: data.streak.current >= data.streak.best ? 'Personal best!' : `Best: ${data.streak.best}`,
+            icon: Flame,
+            color: 'var(--accent-amber)',
+            bgColor: 'rgba(245, 158, 11, 0.12)',
+        },
+        {
+            label: 'XP Points',
+            value: data.stats.xp.toLocaleString(),
+            change: `Level ${Math.floor(data.stats.xp / 300) + 1}`,
+            icon: Zap,
+            color: 'var(--accent-purple)',
+            bgColor: 'rgba(139, 92, 246, 0.12)',
+        },
+    ];
+
+    // ── Map recent activity to include icons ──
+    const recentActivity = data.recentActivity.map((activity) => ({
+        ...activity,
+        icon: activity.type === 'interview' ? Mic : activity.type === 'resume' ? FileText : Trophy,
+        time: timeAgo(activity.time),
+    }));
+
+    // ── Weekly scores (pad to 7 if needed) ──
+    const weeklyData = [...data.weeklyScores];
+    while (weeklyData.length < 7) weeklyData.push(0);
+    const weeklySlice = weeklyData.slice(0, 7);
+    const maxScore = Math.max(...weeklySlice, 1);
+
+    // ── Streak data ──
+    const streakDays = data.streak.current;
+    const streakBest = data.streak.best;
+    const daysToRecord = streakBest - streakDays;
 
     return (
         <div className={styles.page}>
@@ -183,10 +256,10 @@ export default function DashboardPage() {
                                     <h3 className={styles.cardTitle}>Weekly Performance</h3>
                                     <p className={styles.cardSubtitle}>Your interview scores this week</p>
                                 </div>
-                                <Badge variant="emerald" dot>+12% avg</Badge>
+                                <Badge variant="emerald" dot>Scores from DB</Badge>
                             </div>
                             <div className={styles.chart}>
-                                {weeklyData.map((score, i) => (
+                                {weeklySlice.map((score, i) => (
                                     <div key={i} className={styles.chartCol}>
                                         <div className={styles.chartBarWrap}>
                                             <motion.div
@@ -224,51 +297,57 @@ export default function DashboardPage() {
                                 </Link>
                             </div>
                             <div className={styles.activityList}>
-                                {recentActivity.map((activity, i) => (
-                                    <div key={i} className={styles.activityItem}>
-                                        <div
-                                            className={styles.activityIcon}
-                                            style={{
-                                                background:
-                                                    activity.type === 'interview'
-                                                        ? 'rgba(59, 130, 246, 0.12)'
-                                                        : activity.type === 'resume'
-                                                            ? 'rgba(6, 182, 212, 0.12)'
-                                                            : 'rgba(245, 158, 11, 0.12)',
-                                                color:
-                                                    activity.type === 'interview'
-                                                        ? 'var(--accent-blue)'
-                                                        : activity.type === 'resume'
-                                                            ? 'var(--accent-cyan)'
-                                                            : 'var(--accent-amber)',
-                                            }}
-                                        >
-                                            <activity.icon size={16} />
+                                {recentActivity.length > 0 ? (
+                                    recentActivity.map((activity, i) => (
+                                        <div key={i} className={styles.activityItem}>
+                                            <div
+                                                className={styles.activityIcon}
+                                                style={{
+                                                    background:
+                                                        activity.type === 'interview'
+                                                            ? 'rgba(59, 130, 246, 0.12)'
+                                                            : activity.type === 'resume'
+                                                                ? 'rgba(6, 182, 212, 0.12)'
+                                                                : 'rgba(245, 158, 11, 0.12)',
+                                                    color:
+                                                        activity.type === 'interview'
+                                                            ? 'var(--accent-blue)'
+                                                            : activity.type === 'resume'
+                                                                ? 'var(--accent-cyan)'
+                                                                : 'var(--accent-amber)',
+                                                }}
+                                            >
+                                                <activity.icon size={16} />
+                                            </div>
+                                            <div className={styles.activityInfo}>
+                                                <span className={styles.activityTitle}>{activity.title}</span>
+                                                <span className={styles.activitySub}>{activity.subtitle}</span>
+                                            </div>
+                                            <div className={styles.activityMeta}>
+                                                {activity.score > 0 && (
+                                                    <Badge
+                                                        variant={
+                                                            activity.score >= 80
+                                                                ? 'emerald'
+                                                                : activity.score >= 60
+                                                                    ? 'amber'
+                                                                    : 'rose'
+                                                        }
+                                                    >
+                                                        {activity.score}%
+                                                    </Badge>
+                                                )}
+                                                <span className={styles.activityTime}>
+                                                    <Clock size={12} /> {activity.time}
+                                                </span>
+                                            </div>
                                         </div>
-                                        <div className={styles.activityInfo}>
-                                            <span className={styles.activityTitle}>{activity.title}</span>
-                                            <span className={styles.activitySub}>{activity.subtitle}</span>
-                                        </div>
-                                        <div className={styles.activityMeta}>
-                                            {activity.score > 0 && (
-                                                <Badge
-                                                    variant={
-                                                        activity.score >= 80
-                                                            ? 'emerald'
-                                                            : activity.score >= 60
-                                                                ? 'amber'
-                                                                : 'rose'
-                                                    }
-                                                >
-                                                    {activity.score}%
-                                                </Badge>
-                                            )}
-                                            <span className={styles.activityTime}>
-                                                <Clock size={12} /> {activity.time}
-                                            </span>
-                                        </div>
-                                    </div>
-                                ))}
+                                    ))
+                                ) : (
+                                    <p style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '1rem' }}>
+                                        No recent activity yet. Start an interview!
+                                    </p>
+                                )}
                             </div>
                         </Card>
                     </motion.div>
@@ -285,8 +364,8 @@ export default function DashboardPage() {
                         <Card className={styles.overallScore}>
                             <h3 className={styles.cardTitle}>Overall Score</h3>
                             <div className={styles.scoreCenter}>
-                                <ProgressRing progress={82} size={140} strokeWidth={10} color="var(--accent-blue)">
-                                    <span className={styles.scoreValue}>82</span>
+                                <ProgressRing progress={data.stats.avgScore} size={140} strokeWidth={10} color="var(--accent-blue)">
+                                    <span className={styles.scoreValue}>{data.stats.avgScore}</span>
                                     <span className={styles.scoreLabel}>/ 100</span>
                                 </ProgressRing>
                             </div>
@@ -294,22 +373,22 @@ export default function DashboardPage() {
                                 <div className={styles.scoreItem}>
                                     <span className={styles.scoreDot} style={{ background: 'var(--accent-blue)' }} />
                                     <span>Communication</span>
-                                    <span className={styles.scoreItemVal}>85%</span>
+                                    <span className={styles.scoreItemVal}>{data.scoreBreakdown.communication}%</span>
                                 </div>
                                 <div className={styles.scoreItem}>
                                     <span className={styles.scoreDot} style={{ background: 'var(--accent-purple)' }} />
                                     <span>Technical</span>
-                                    <span className={styles.scoreItemVal}>78%</span>
+                                    <span className={styles.scoreItemVal}>{data.scoreBreakdown.technical}%</span>
                                 </div>
                                 <div className={styles.scoreItem}>
                                     <span className={styles.scoreDot} style={{ background: 'var(--accent-emerald)' }} />
                                     <span>Problem Solving</span>
-                                    <span className={styles.scoreItemVal}>84%</span>
+                                    <span className={styles.scoreItemVal}>{data.scoreBreakdown.problemSolving}%</span>
                                 </div>
                                 <div className={styles.scoreItem}>
                                     <span className={styles.scoreDot} style={{ background: 'var(--accent-cyan)' }} />
                                     <span>Confidence</span>
-                                    <span className={styles.scoreItemVal}>80%</span>
+                                    <span className={styles.scoreItemVal}>{data.scoreBreakdown.confidence}%</span>
                                 </div>
                             </div>
                         </Card>
@@ -324,7 +403,7 @@ export default function DashboardPage() {
                         <Card>
                             <div className={styles.streakHeader}>
                                 <Flame size={20} color="var(--accent-amber)" />
-                                <h3 className={styles.cardTitle}>12 Day Streak</h3>
+                                <h3 className={styles.cardTitle}>{streakDays} Day Streak</h3>
                             </div>
                             <div className={styles.streakCalendar}>
                                 {Array.from({ length: 14 }).map((_, i) => (
@@ -333,17 +412,21 @@ export default function DashboardPage() {
                                         className={styles.streakDay}
                                         style={{
                                             background:
-                                                i < 12
+                                                i < streakDays
                                                     ? `rgba(245, 158, 11, ${0.3 + (i / 14) * 0.7})`
                                                     : 'var(--bg-tertiary)',
                                         }}
                                     >
-                                        {i < 12 ? <Star size={10} /> : null}
+                                        {i < streakDays ? <Star size={10} /> : null}
                                     </div>
                                 ))}
                             </div>
                             <p className={styles.streakText}>
-                                Keep going! Only <strong>3 more days</strong> to beat your best streak.
+                                {daysToRecord > 0 ? (
+                                    <>Keep going! Only <strong>{daysToRecord} more days</strong> to beat your best streak.</>
+                                ) : (
+                                    <>🔥 You&apos;re on your <strong>best streak ever</strong>! Keep it up!</>
+                                )}
                             </p>
                         </Card>
                     </motion.div>
@@ -360,7 +443,7 @@ export default function DashboardPage() {
                                 <Target size={18} color="var(--text-tertiary)" />
                             </div>
                             <div className={styles.goalsList}>
-                                {upcomingGoals.map((goal, i) => (
+                                {data.goals.map((goal, i) => (
                                     <div key={i} className={styles.goalItem}>
                                         <div className={styles.goalInfo}>
                                             <span className={styles.goalLabel}>{goal.label}</span>

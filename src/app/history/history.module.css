@@ -245,6 +245,25 @@
     background: linear-gradient(to right, var(--accent-rose), var(--accent-amber), var(--accent-emerald));
 }
 
+/* Loading Skeleton */
+.skeleton {
+    height: 90px;
+    border-radius: var(--radius-lg);
+    background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+
+    100% {
+        background-position: -200% 0;
+    }
+}
+
 /* Responsive */
 @media (max-width: 1024px) {
     .mainGrid {
