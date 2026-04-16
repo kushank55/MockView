@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { useSession, signOut } from 'next-auth/react';
 import {
     LayoutDashboard,
     Mic,
@@ -13,6 +14,7 @@ import {
     ChevronRight,
     Sparkles,
     Zap,
+    LogOut,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 import { cn } from '@/lib/utils';
@@ -28,6 +30,16 @@ const navItems = [
 export default function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
     const pathname = usePathname();
+    const { data: session } = useSession();
+
+    const userName = session?.user?.name || 'User';
+    const userEmail = session?.user?.email || '';
+    const initials = userName
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
 
     return (
         <aside className={cn(styles.sidebar, collapsed && styles.collapsed)}>
@@ -74,6 +86,27 @@ export default function Sidebar() {
                     </Link>
                 </div>
             )}
+
+            {/* User Profile Section */}
+            <div className={cn(styles.userSection, collapsed && styles.userSectionCollapsed)}>
+                <div className={styles.userInfo} title={collapsed ? userName : undefined}>
+                    <div className={styles.userAvatar}>{initials}</div>
+                    {!collapsed && (
+                        <div className={styles.userDetails}>
+                            <span className={styles.userName}>{userName}</span>
+                            <span className={styles.userEmail}>{userEmail}</span>
+                        </div>
+                    )}
+                </div>
+                <button
+                    className={styles.signOutBtn}
+                    onClick={() => signOut({ callbackUrl: '/login' })}
+                    title="Sign out"
+                >
+                    <LogOut size={16} />
+                    {!collapsed && <span>Sign out</span>}
+                </button>
+            </div>
 
             {/* Collapse Toggle */}
             <button

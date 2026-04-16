@@ -130,7 +130,7 @@ export default function LandingPage() {
         <div className={styles.navLinks}>
           <Link href="#features">Features</Link>
           <Link href="#testimonials">Testimonials</Link>
-          <Link href="/dashboard">
+          <Link href="/signup">
             <Button size="sm">Get Started <ArrowRight size={14} /></Button>
           </Link>
         </div>
@@ -334,7 +334,7 @@ export default function LandingPage() {
           <p className={styles.ctaDesc}>
             Join thousands of professionals who&apos;ve landed their dream jobs using MockView AI
           </p>
-          <Link href="/dashboard">
+          <Link href="/signup">
             <Button size="lg" icon={<ArrowRight size={18} />}>
               Get Started — It&apos;s Free
             </Button>
