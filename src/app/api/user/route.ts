@@ -1,11 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 // GET /api/user — Get user profile
-export async function GET(req: NextRequest) {
+export async function GET() {
     try {
-        const { searchParams } = new URL(req.url);
-        const userId = searchParams.get('userId') || 'demo-user';
+        const session = await getServerSession(authOptions);
+        if (!session?.user || !(session.user as { id?: string }).id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const userId = (session.user as { id: string }).id;
 
         const user = await db.user.findUnique({
             where: { id: userId },
@@ -40,10 +45,14 @@ export async function GET(req: NextRequest) {
 // PATCH /api/user — Update user profile or settings
 export async function PATCH(req: NextRequest) {
     try {
-        const body = await req.json();
-        const userId = body.userId || 'demo-user';
+        const session = await getServerSession(authOptions);
+        if (!session?.user || !(session.user as { id?: string }).id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const userId = (session.user as { id: string }).id;
 
-        // Only allow updating specific fields
+        const body = await req.json();
+
         const allowedFields = [
             'name',
             'email',

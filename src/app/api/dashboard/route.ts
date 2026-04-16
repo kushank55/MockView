@@ -1,11 +1,16 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
 
 // GET /api/dashboard — Aggregated dashboard data
-export async function GET(req: NextRequest) {
+export async function GET() {
     try {
-        const { searchParams } = new URL(req.url);
-        const userId = searchParams.get('userId') || 'demo-user';
+        const session = await getServerSession(authOptions);
+        if (!session?.user || !(session.user as { id?: string }).id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const userId = (session.user as { id: string }).id;
 
         // Fetch all data in parallel
         const [interviews, goals, streak, latestResume] = await Promise.all([
@@ -76,7 +81,7 @@ export async function GET(req: NextRequest) {
                 totalInterviews,
                 avgScore,
                 streak: streak?.currentStreak || 0,
-                xp: totalInterviews * 100 + avgScore * 10, // Simple XP formula
+                xp: totalInterviews * 100 + avgScore * 10,
             },
             recentActivity,
             weeklyScores,

@@ -2,6 +2,7 @@ import React from 'react';
 import type { Metadata } from 'next';
 import './globals.css';
 import AppShell from '@/components/layout/AppShell';
+import AuthProvider from '@/components/providers/AuthProvider';
 
 export const metadata: Metadata = {
   title: 'MockView AI — AI-Powered Mock Interviews & Resume Analysis',
@@ -18,7 +19,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AppShell>{children}</AppShell>
+        <AuthProvider>
+          <AppShell>{children}</AppShell>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -120,7 +120,6 @@ export default function SettingsPage() {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    userId: profile?.id || 'demo-user',
                     name: formData.name,
                     email: formData.email,
                     company: formData.company,

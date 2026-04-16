@@ -98,7 +98,9 @@ export default function DashboardPage() {
         fetch('/api/dashboard')
             .then((res) => res.json())
             .then((apiData) => {
-                setData(apiData);
+                if (apiData && apiData.stats) {
+                    setData(apiData);
+                }
                 setLoading(false);
             })
             .catch((err) => {
