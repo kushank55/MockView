@@ -4,7 +4,12 @@
     margin: 0 auto;
 }
 
-/* Upload Screen */
+/* ─── Hidden File Input ─── */
+.hiddenInput {
+    display: none;
+}
+
+/* ─── Upload Screen ─── */
 .uploadContainer {
     display: flex;
     justify-content: center;
@@ -12,7 +17,7 @@
 }
 
 .uploadCard {
-    max-width: 540px;
+    max-width: 580px;
     width: 100%;
 }
 
@@ -30,6 +35,10 @@
 .dragOver {
     border-color: var(--accent-cyan);
     background: rgba(6, 182, 212, 0.05);
+}
+
+.dropZoneSmall {
+    padding: var(--space-lg) var(--space-xl);
 }
 
 .dropIcon {
@@ -76,10 +85,188 @@
     color: var(--text-tertiary);
 }
 
+/* ─── File Preview ─── */
+.filePreview {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-sm);
+    cursor: default;
+}
+
+.fileIcon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--radius-md);
+    background: rgba(6, 182, 212, 0.12);
+    color: var(--accent-cyan);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.fileInfo {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    text-align: left;
+}
+
+.fileName {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 300px;
+}
+
+.fileSize {
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+}
+
+.fileRemove {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-full);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-tertiary);
+    transition: all var(--transition-fast);
+    flex-shrink: 0;
+    cursor: pointer;
+}
+
+.fileRemove:hover {
+    background: rgba(244, 63, 94, 0.12);
+    color: var(--accent-rose);
+}
+
+/* ─── Role Selector ─── */
+.roleSection {
+    margin-bottom: var(--space-lg);
+}
+
+.roleLabel {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: var(--space-sm);
+}
+
+.roleSelector {
+    position: relative;
+    margin-bottom: var(--space-sm);
+}
+
+.roleDropdownBtn {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.roleDropdownBtn:hover {
+    border-color: var(--border-medium);
+}
+
+.chevronUp {
+    transform: rotate(180deg);
+}
+
+.roleDropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-medium);
+    border-radius: var(--radius-md);
+    max-height: 240px;
+    overflow-y: auto;
+    z-index: 50;
+    box-shadow: var(--shadow-lg);
+}
+
+.roleOption {
+    width: 100%;
+    padding: 10px 14px;
+    font-size: var(--text-sm);
+    text-align: left;
+    color: var(--text-secondary);
+    transition: all var(--transition-fast);
+    cursor: pointer;
+}
+
+.roleOption:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.roleOptionActive {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-blue);
+}
+
+.customRoleWrap {
+    margin-top: var(--space-xs);
+}
+
+.customRoleInput {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-subtle);
+    font-size: var(--text-sm);
+    color: var(--text-primary);
+    transition: all var(--transition-fast);
+}
+
+.customRoleInput::placeholder {
+    color: var(--text-muted);
+}
+
+.customRoleInput:focus {
+    border-color: var(--accent-blue);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* ─── Error Message ─── */
+.errorMsg {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    background: rgba(244, 63, 94, 0.08);
+    border: 1px solid rgba(244, 63, 94, 0.2);
+    color: var(--accent-rose);
+    font-size: var(--text-sm);
+    margin-bottom: var(--space-md);
+}
+
 .uploadFeatures {
     display: flex;
     justify-content: center;
     gap: var(--space-lg);
+    margin-top: var(--space-lg);
 }
 
 .uploadFeature {
@@ -91,7 +278,94 @@
     font-weight: 500;
 }
 
-/* Analysis View */
+/* ─── Analyzing State ─── */
+.analyzingCard {
+    max-width: 500px;
+    width: 100%;
+}
+
+.analyzingInner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: var(--space-xl) 0;
+}
+
+.analyzingSpinner {
+    color: var(--accent-purple);
+    margin-bottom: var(--space-lg);
+}
+
+.analyzingTitle {
+    font-size: var(--text-xl);
+    font-weight: 700;
+    margin-bottom: var(--space-xs);
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.analyzingFile {
+    font-size: var(--text-sm);
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-xl);
+}
+
+.stepsContainer {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-sm);
+    max-width: 300px;
+}
+
+.stepItem {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 8px 14px;
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    color: var(--text-muted);
+    transition: all var(--transition-base);
+    position: relative;
+}
+
+.stepDone {
+    color: var(--accent-emerald);
+}
+
+.stepActive {
+    color: var(--accent-blue);
+    background: rgba(59, 130, 246, 0.08);
+    font-weight: 600;
+}
+
+.stepIcon {
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.stepLabel {
+    flex: 1;
+    text-align: left;
+}
+
+.stepPulse {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    flex-shrink: 0;
+}
+
+/* ─── Analysis View ─── */
 .topSection {
     margin-bottom: var(--space-xl);
 }
@@ -113,6 +387,12 @@
     gap: var(--space-sm);
 }
 
+.scoreBadges {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+}
+
 .scoreTitle {
     font-size: var(--text-xl);
     font-weight: 700;
@@ -122,6 +402,12 @@
     font-size: var(--text-sm);
     color: var(--text-secondary);
     line-height: 1.6;
+}
+
+.scoreActions {
+    display: flex;
+    gap: var(--space-sm);
+    margin-top: var(--space-xs);
 }
 
 .atsValue {
@@ -141,7 +427,7 @@
     letter-spacing: 0.05em;
 }
 
-/* Analysis Grid */
+/* ─── Analysis Grid ─── */
 .analysisGrid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -164,7 +450,7 @@
     margin-bottom: var(--space-lg);
 }
 
-/* Section Scores */
+/* ─── Section Scores ─── */
 .sectionList {
     display: flex;
     flex-direction: column;
@@ -204,7 +490,7 @@
     text-align: right;
 }
 
-/* Keyword Heatmap */
+/* ─── Keyword Heatmap ─── */
 .keywordGrid {
     display: flex;
     flex-wrap: wrap;
@@ -260,7 +546,7 @@
     border-radius: 50%;
 }
 
-/* Improvements */
+/* ─── Improvements ─── */
 .improvementList {
     display: flex;
     flex-direction: column;
@@ -309,14 +595,14 @@
     line-height: 1.5;
 }
 
-/* Actions */
+/* ─── Actions ─── */
 .actionList {
     display: flex;
     flex-direction: column;
     gap: var(--space-sm);
 }
 
-/* Loading Skeleton */
+/* ─── Loading Skeleton ─── */
 .skeleton {
     border-radius: var(--radius-lg);
     background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
@@ -334,7 +620,7 @@
     }
 }
 
-/* Responsive */
+/* ─── Responsive ─── */
 @media (max-width: 1024px) {
     .analysisGrid {
         grid-template-columns: 1fr;
@@ -343,6 +629,14 @@
     .scoreHeader {
         flex-direction: column;
         text-align: center;
+    }
+
+    .scoreBadges {
+        justify-content: center;
+    }
+
+    .scoreActions {
+        justify-content: center;
     }
 }
 
@@ -354,5 +648,9 @@
     .uploadFeatures {
         flex-direction: column;
         align-items: center;
+    }
+
+    .fileName {
+        max-width: 180px;
     }
 }

@@ -117,6 +117,7 @@ model ResumeAnalysis {
 
   fileName    String
   fileUrl     String?
+  targetRole  String    @default("")
   atsScore    Int // 0-100
   keywordData Json // Array of { keyword, count, relevance, found }
   sectionScores Json // Array of { label, score, icon }

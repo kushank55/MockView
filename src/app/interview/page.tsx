@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSpeech } from '@/hooks/useSpeech';
 import {
     Mic,
     MicOff,
@@ -33,27 +34,7 @@ const interviewTypes = [
     { id: 'system-design', label: 'System Design', icon: Zap, color: 'var(--accent-cyan)' },
 ];
 
-const questions = [
-    'Tell me about yourself and your experience.',
-    'Describe a challenging project you led and how you overcame obstacles.',
-    'How do you approach system design for a high-traffic application?',
-    'Walk me through your problem-solving process.',
-    'What are your greatest strengths and areas for improvement?',
-];
-
-const coachTips = [
-    { type: 'positive', icon: CheckCircle2, text: 'Great eye contact and posture!', color: 'var(--accent-emerald)' },
-    { type: 'suggestion', icon: Lightbulb, text: 'Try to reduce filler words like "um" and "uh"', color: 'var(--accent-amber)' },
-    { type: 'insight', icon: TrendingUp, text: 'Your pacing is improving — 140 WPM (ideal range)', color: 'var(--accent-blue)' },
-    { type: 'warning', icon: AlertCircle, text: 'Remember to use the STAR method for behavioral questions', color: 'var(--accent-rose)' },
-];
-
-const transcriptMessages = [
-    { role: 'ai', text: 'Welcome! Let\'s begin with your mock interview. I\'ll be evaluating your communication, technical depth, and confidence. Are you ready?' },
-    { role: 'user', text: 'Yes, I\'m ready. Let\'s get started!' },
-    { role: 'ai', text: 'Great! Tell me about yourself and walk me through your professional journey. Focus on your most relevant experiences.' },
-    { role: 'user', text: 'I\'m a software engineer with 4 years of experience building scalable web applications. Most recently, I led the frontend architecture for a fintech startup...' },
-];
+// Hardcoded static references removed, driven by useChat state.
 
 export default function InterviewPage() {
     const [isActive, setIsActive] = useState(false);
@@ -61,12 +42,134 @@ export default function InterviewPage() {
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOn, setIsVideoOn] = useState(true);
     const [selectedType, setSelectedType] = useState('behavioral');
-    const [currentQuestion, setCurrentQuestion] = useState(0);
     const [timer, setTimer] = useState(0);
     const [showCoach, setShowCoach] = useState(true);
-    const [waveformData, setWaveformData] = useState<number[]>(
-        Array.from({ length: 50 }, () => Math.random())
-    );
+    const [waveformData, setWaveformData] = useState<number[]>(Array.from({ length: 50 }, () => 0.1));
+    const [currentAnswer, setCurrentAnswer] = useState('');
+
+    const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // ── Refs that mirror state so callbacks always read the latest values ──
+    const currentAnswerRef = useRef(currentAnswer);
+    const messagesRef = useRef(messages);
+    const isLoadingRef = useRef(isLoading);
+    const isSpeakingRef = useRef(false);
+    const transcriptRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => { currentAnswerRef.current = currentAnswer; }, [currentAnswer]);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+    useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
+
+    const append = async (newUserMessage: { role: 'user', content: string }) => {
+        const updatedMessages = [...messagesRef.current, newUserMessage];
+        setMessages(updatedMessages);
+        messagesRef.current = updatedMessages;
+        setIsLoading(true);
+
+        try {
+            const res = await fetch('/api/interview/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: updatedMessages,
+                    topic: selectedType,
+                }),
+            });
+
+            if (!res.ok || !res.body) throw new Error('Network response was not ok');
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let aiText = '';
+
+            // Add an empty assistant message
+            setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                aiText += chunk;
+
+                // Update the last message
+                setMessages(prev => {
+                    const newMsgs = [...prev];
+                    newMsgs[newMsgs.length - 1].content = aiText;
+                    return newMsgs;
+                });
+            }
+
+            setIsLoading(false);
+
+            if (isActive && !isPaused && !isMuted) {
+                speakText(aiText);
+            }
+        } catch (error) {
+            console.error('Failed to fetch AI response:', error);
+            setIsLoading(false);
+        }
+    };
+
+    const {
+        isRecording,
+        isSpeaking,
+        startRecording,
+        stopRecording,
+        speakText,
+        stopSpeaking,
+    } = useSpeech({
+        onSpeechResult: (text) => {
+            if (!isPaused && !isMuted) {
+                setCurrentAnswer((prev) => {
+                    const updated = prev ? prev + " " + text : text;
+                    currentAnswerRef.current = updated;
+                    return updated;
+                });
+            }
+        },
+        onSilence: () => {
+            // Guard: don't fire while AI is loading/speaking, or if answer is empty
+            if (isLoadingRef.current || isSpeakingRef.current) return;
+            const answer = currentAnswerRef.current.trim();
+            if (answer !== '') {
+                append({ role: 'user', content: answer });
+                setCurrentAnswer('');
+                currentAnswerRef.current = '';
+            }
+        }
+    });
+
+    // Keep isSpeakingRef in sync
+    useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
+
+    // Auto-start recording functionality
+    useEffect(() => {
+        if (isActive && !isPaused && !isMuted && !isSpeaking) {
+            startRecording();
+        } else {
+            stopRecording();
+        }
+    }, [isActive, isPaused, isMuted, isSpeaking, startRecording, stopRecording]);
+
+    // Derived states
+    const aiMessages = messages.filter((m: any) => m.role === 'assistant');
+    const questionNumber = Math.max(1, aiMessages.length);
+    const latestQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].content : 'Waiting for AI to ask the first question...';
+    const transcriptMessages = messages.map((m: any) => ({
+        role: m.role === 'assistant' ? 'ai' : 'user',
+        text: m.content
+    }));
+    if (currentAnswer.trim() !== '') {
+        transcriptMessages.push({ role: 'user', text: currentAnswer });
+    }
+
+    // Auto-scroll transcript to the bottom on new messages
+    useEffect(() => {
+        if (transcriptRef.current) {
+            transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+        }
+    }, [messages, currentAnswer]);
 
     // Timer
     useEffect(() => {
@@ -79,18 +182,23 @@ export default function InterviewPage() {
         return () => clearInterval(interval);
     }, [isActive, isPaused]);
 
-    // Waveform animation
+    // Waveform animation based on speaking vs recording status
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (isActive && !isPaused) {
             interval = setInterval(() => {
                 setWaveformData(
-                    Array.from({ length: 50 }, () => Math.random() * 0.8 + 0.2)
+                    Array.from({ length: 50 }, () => {
+                        const base = isSpeaking ? 0.6 : (isRecording ? 0.3 : 0.1);
+                        return base + Math.random() * (isSpeaking ? 0.4 : 0.15);
+                    })
                 );
-            }, 150);
+            }, 100);
+        } else {
+            setWaveformData(Array.from({ length: 50 }, () => 0.1));
         }
         return () => clearInterval(interval);
-    }, [isActive, isPaused]);
+    }, [isActive, isPaused, isSpeaking, isRecording]);
 
     const formatTimer = useCallback((s: number) => {
         const mins = Math.floor(s / 60);
@@ -156,7 +264,11 @@ export default function InterviewPage() {
                             size="lg"
                             fullWidth
                             icon={<Mic size={18} />}
-                            onClick={() => setIsActive(true)}
+                            onClick={() => {
+                                setIsActive(true);
+                                // Trigger first question by appending initial context
+                                append({ role: 'user', content: `Hi, I'm ready to begin the ${selectedType} interview.` });
+                            }}
                         >
                             Begin Interview
                         </Button>
@@ -178,11 +290,11 @@ export default function InterviewPage() {
                 </div>
                 <div className={styles.headerCenter}>
                     <span className={styles.questionProgress}>
-                        Question {currentQuestion + 1} of {questions.length}
+                        Question {questionNumber}
                     </span>
                 </div>
                 <div className={styles.headerRight}>
-                    <Badge variant="blue">Behavioral</Badge>
+                    <Badge variant="blue">{interviewTypes.find(t => t.id === selectedType)?.label || 'Interview'}</Badge>
                 </div>
             </div>
 
@@ -198,23 +310,9 @@ export default function InterviewPage() {
                             <div className={styles.questionLabel}>
                                 <Brain size={16} /> AI Interviewer
                             </div>
-                            <p className={styles.questionText}>{questions[currentQuestion]}</p>
-                            <div className={styles.questionNav}>
-                                <button
-                                    className={styles.navBtn}
-                                    disabled={currentQuestion === 0}
-                                    onClick={() => setCurrentQuestion((p) => p - 1)}
-                                >
-                                    Previous
-                                </button>
-                                <button
-                                    className={styles.navBtn}
-                                    disabled={currentQuestion === questions.length - 1}
-                                    onClick={() => setCurrentQuestion((p) => p + 1)}
-                                >
-                                    Next <ChevronRight size={14} />
-                                </button>
-                            </div>
+                            <p className={styles.questionText}>
+                                {latestQuestion}
+                            </p>
                         </Card>
                     </motion.div>
 
@@ -222,11 +320,11 @@ export default function InterviewPage() {
                     <Card className={styles.waveformCard}>
                         <div className={styles.waveformHeader}>
                             <Volume2 size={16} color="var(--accent-blue)" />
-                            <span>Voice Activity</span>
+                            <span>{isSpeaking ? 'AI Speaking' : 'Your Voice'}</span>
                             {!isPaused && (
                                 <span className={styles.recording}>
-                                    <span className={styles.recordDot} />
-                                    Recording
+                                    <span className={styles.recordDot} style={{ background: isSpeaking ? 'var(--accent-purple)' : undefined }} />
+                                    {isSpeaking ? 'Listening' : (isRecording ? 'Recording' : 'Waiting')}
                                 </span>
                             )}
                         </div>
@@ -253,14 +351,13 @@ export default function InterviewPage() {
                         <h3 className={styles.sectionTitle}>
                             <MessageSquare size={16} /> Live Transcript
                         </h3>
-                        <div className={styles.transcript}>
-                            {transcriptMessages.map((msg, i) => (
+                        <div className={styles.transcript} ref={transcriptRef}>
+                            {transcriptMessages.map((msg: any, i: number) => (
                                 <motion.div
                                     key={i}
                                     className={`${styles.transcriptMsg} ${styles[msg.role]}`}
                                     initial={{ opacity: 0, x: msg.role === 'ai' ? -10 : 10 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: i * 0.2 }}
                                 >
                                     <span className={styles.msgRole}>
                                         {msg.role === 'ai' ? 'AI' : 'You'}
@@ -268,9 +365,20 @@ export default function InterviewPage() {
                                     <p className={styles.msgText}>{msg.text}</p>
                                 </motion.div>
                             ))}
-                            <div className={styles.typingIndicator}>
-                                <span /><span /><span />
-                            </div>
+
+                            {/* Live Interim Transcript */}
+                            {currentAnswer && (
+                                <div className={`${styles.transcriptMsg} ${styles.user}`} style={{ opacity: 0.7 }}>
+                                    <span className={styles.msgRole}>You</span>
+                                    <p className={styles.msgText}>{currentAnswer}</p>
+                                </div>
+                            )}
+
+                            {isLoading && (
+                                <div className={styles.typingIndicator}>
+                                    <span /><span /><span />
+                                </div>
+                            )}
                         </div>
                     </Card>
 
@@ -296,10 +404,49 @@ export default function InterviewPage() {
                         </button>
                         <button
                             className={`${styles.controlBtn} ${styles.endBtn}`}
-                            onClick={() => {
-                                setIsActive(false);
-                                setTimer(0);
-                                setCurrentQuestion(0);
+                            disabled={isLoading}
+                            onClick={async () => {
+                                setIsLoading(true);
+                                try {
+                                    // Stop recording immediately
+                                    setIsActive(false);
+
+                                    // Generate placeholder score until AI evaluation is fully implemented
+                                    const baseScore = Math.floor(Math.random() * 16) + 75; // 75-90
+
+                                    const res = await fetch('/api/interviews', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            type: selectedType,
+                                            topic: `${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Interview`,
+                                            score: baseScore,
+                                            duration: `${Math.max(1, Math.ceil(timer / 60))} min`,
+                                            questions: Math.max(1, messages.filter((m: any) => m.role === 'assistant').length),
+                                            transcript: messages,
+                                            feedback: {
+                                                communication: baseScore + 2,
+                                                technical: baseScore - 3,
+                                                problemSolving: baseScore,
+                                                confidence: baseScore + 5
+                                            }
+                                        })
+                                    });
+
+                                    if (!res.ok) {
+                                        const errorData = await res.text();
+                                        alert("Failed to save the interview: " + errorData);
+                                        setIsLoading(false);
+                                        return;
+                                    }
+
+                                    // Force relocation so the dashboard safely hard-reloads its server components
+                                    window.location.href = '/dashboard';
+                                } catch (err) {
+                                    console.error('Failed to save interview', err);
+                                    setTimer(0);
+                                    setIsLoading(false);
+                                }
                             }}
                         >
                             <PhoneOff size={20} />
@@ -337,22 +484,14 @@ export default function InterviewPage() {
                                     <span className={styles.confidenceValue}>78%</span>
                                 </div>
 
-                                {/* Real-time Tips */}
+                                {/* Real-time Tips (Placeholder for future hookup) */}
                                 <div className={styles.tipsSection}>
                                     <h4 className={styles.tipsLabel}>Real-time Feedback</h4>
                                     <div className={styles.tipsList}>
-                                        {coachTips.map((tip, i) => (
-                                            <motion.div
-                                                key={i}
-                                                className={styles.tipItem}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: 0.3 + i * 0.15 }}
-                                            >
-                                                <tip.icon size={14} color={tip.color} />
-                                                <span>{tip.text}</span>
-                                            </motion.div>
-                                        ))}
+                                        <div className={styles.tipItem}>
+                                            <CheckCircle2 size={14} color="var(--accent-emerald)" />
+                                            <span>Good detailed explanation</span>
+                                        </div>
                                     </div>
                                 </div>
 

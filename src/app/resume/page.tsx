@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Upload,
     FileText,
@@ -16,6 +16,11 @@ import {
     Shield,
     Target,
     Sparkles,
+    Briefcase,
+    X,
+    RefreshCw,
+    Loader2,
+    ChevronDown,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -29,12 +34,39 @@ import styles from './resume.module.css';
 interface ResumeAnalysis {
     id: string;
     fileName: string;
+    targetRole: string;
     atsScore: number;
     keywordData: { keyword: string; count: number; relevance: number; found: boolean }[];
     sectionScores: { label: string; score: number }[];
     improvements: { severity: string; title: string; description: string }[];
     createdAt: string;
 }
+
+// ── Predefined roles ──
+const PREDEFINED_ROLES = [
+    'Frontend Engineer',
+    'Backend Engineer',
+    'Full-Stack Developer',
+    'Data Scientist',
+    'ML Engineer',
+    'DevOps Engineer',
+    'Product Manager',
+    'UI/UX Designer',
+    'Mobile Developer',
+    'Cloud Architect',
+    'Software Engineer',
+    'Data Analyst',
+    'Cybersecurity Analyst',
+];
+
+// ── Analysis steps ──
+const ANALYSIS_STEPS = [
+    { label: 'Parsing PDF', icon: FileText },
+    { label: 'Extracting Content', icon: Search },
+    { label: 'Analyzing for Role', icon: Target },
+    { label: 'Scoring ATS Match', icon: BarChart3 },
+    { label: 'Generating Insights', icon: Sparkles },
+];
 
 // ── Icon mapping for section scores ──
 const sectionIconMap: Record<string, React.ElementType> = {
@@ -56,8 +88,19 @@ const severityConfig: Record<string, { icon: React.ElementType; color: string }>
 export default function ResumePage() {
     const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
     const [loading, setLoading] = useState(true);
+
+    // Upload state
+    const [selectedFile, setSelectedFile] = useState<File | null>(null);
+    const [targetRole, setTargetRole] = useState('');
+    const [customRole, setCustomRole] = useState('');
+    const [showRoleDropdown, setShowRoleDropdown] = useState(false);
     const [isDragOver, setIsDragOver] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisStep, setAnalysisStep] = useState(0);
+    const [error, setError] = useState('');
+
+    const fileInputRef = useRef<HTMLInputElement>(null);
+    const dropdownRef = useRef<HTMLDivElement>(null);
 
     // ── Fetch existing analysis on mount ──
     useEffect(() => {
@@ -65,7 +108,7 @@ export default function ResumePage() {
             .then((res) => res.json())
             .then((data) => {
                 if (data.analyses && data.analyses.length > 0) {
-                    setAnalysis(data.analyses[0]); // Show latest analysis
+                    setAnalysis(data.analyses[0]);
                 }
                 setLoading(false);
             })
@@ -75,22 +118,119 @@ export default function ResumePage() {
             });
     }, []);
 
-    const handleAnalyze = () => {
-        setIsAnalyzing(true);
-        // Simulate analysis (will be real AI later)
-        setTimeout(() => {
-            setIsAnalyzing(false);
-            // Re-fetch to get latest analysis
-            fetch('/api/resume')
-                .then((res) => res.json())
-                .then((data) => {
-                    if (data.analyses && data.analyses.length > 0) {
-                        setAnalysis(data.analyses[0]);
-                    }
-                });
-        }, 2500);
+    // ── Close dropdown on outside click ──
+    useEffect(() => {
+        function handleClickOutside(e: MouseEvent) {
+            if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+                setShowRoleDropdown(false);
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // ── Animate analysis steps ──
+    useEffect(() => {
+        if (!isAnalyzing) return;
+        const interval = setInterval(() => {
+            setAnalysisStep((prev) => {
+                if (prev < ANALYSIS_STEPS.length - 1) return prev + 1;
+                return prev;
+            });
+        }, 2000);
+        return () => clearInterval(interval);
+    }, [isAnalyzing]);
+
+    // ── File handlers ──
+    const handleFileSelect = (file: File) => {
+        if (file.type !== 'application/pdf') {
+            setError('Please upload a PDF file.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024) {
+            setError('File size must be under 10MB.');
+            return;
+        }
+        setError('');
+        setSelectedFile(file);
     };
 
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileSelect(file);
+    };
+
+    const handleBrowse = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) handleFileSelect(file);
+    };
+
+    const getEffectiveRole = () => {
+        return customRole.trim() || targetRole || 'Software Engineer';
+    };
+
+    // ── Analyze ──
+    const handleAnalyze = async () => {
+        if (!selectedFile) {
+            setError('Please select a PDF file first.');
+            return;
+        }
+
+        setIsAnalyzing(true);
+        setAnalysisStep(0);
+        setError('');
+
+        try {
+            const formData = new FormData();
+            formData.append('resume', selectedFile);
+            formData.append('targetRole', getEffectiveRole());
+
+            const res = await fetch('/api/resume/analyze', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await res.json();
+
+            if (!res.ok) {
+                throw new Error(data.error || 'Analysis failed');
+            }
+
+            setAnalysis(data);
+            setSelectedFile(null);
+            setTargetRole('');
+            setCustomRole('');
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Something went wrong. Please try again.';
+            setError(message);
+        } finally {
+            setIsAnalyzing(false);
+            setAnalysisStep(0);
+        }
+    };
+
+    // ── New Analysis ──
+    const handleNewAnalysis = () => {
+        setAnalysis(null);
+        setSelectedFile(null);
+        setTargetRole('');
+        setCustomRole('');
+        setError('');
+    };
+
+    const formatFileSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    // ── Loading ──
     if (loading) {
         return (
             <div className={styles.page}>
@@ -100,49 +240,212 @@ export default function ResumePage() {
         );
     }
 
-    // ── Upload screen (no analysis yet) ──
+    // ═══════════════════════════════════════════
+    // ANALYZING STATE — multi-step progress
+    // ═══════════════════════════════════════════
+    if (isAnalyzing) {
+        return (
+            <div className={styles.page}>
+                <Header title="Resume Analysis" subtitle="Analyzing your resume with AI..." />
+                <motion.div
+                    className={styles.uploadContainer}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                >
+                    <Card className={styles.analyzingCard} glow="purple">
+                        <div className={styles.analyzingInner}>
+                            <motion.div
+                                className={styles.analyzingSpinner}
+                                animate={{ rotate: 360 }}
+                                transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
+                            >
+                                <Loader2 size={40} />
+                            </motion.div>
+                            <h3 className={styles.analyzingTitle}>Analyzing for {getEffectiveRole()}</h3>
+                            <p className={styles.analyzingFile}>{selectedFile?.name}</p>
+
+                            <div className={styles.stepsContainer}>
+                                {ANALYSIS_STEPS.map((step, i) => {
+                                    const StepIcon = step.icon;
+                                    const isActive = i === analysisStep;
+                                    const isDone = i < analysisStep;
+                                    return (
+                                        <motion.div
+                                            key={step.label}
+                                            className={`${styles.stepItem} ${isDone ? styles.stepDone : ''} ${isActive ? styles.stepActive : ''}`}
+                                            initial={{ opacity: 0, x: -10 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            transition={{ delay: i * 0.1 }}
+                                        >
+                                            <div className={styles.stepIcon}>
+                                                {isDone ? <CheckCircle2 size={16} /> : <StepIcon size={16} />}
+                                            </div>
+                                            <span className={styles.stepLabel}>{step.label}</span>
+                                            {isActive && (
+                                                <motion.div
+                                                    className={styles.stepPulse}
+                                                    animate={{ scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }}
+                                                    transition={{ repeat: Infinity, duration: 1.2 }}
+                                                />
+                                            )}
+                                        </motion.div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </Card>
+                </motion.div>
+            </div>
+        );
+    }
+
+    // ═══════════════════════════════════════════
+    // UPLOAD SCREEN (no analysis yet)
+    // ═══════════════════════════════════════════
     if (!analysis) {
         return (
             <div className={styles.page}>
-                <Header title="Resume Analysis" subtitle="Upload your resume for AI-powered insights" />
+                <Header title="Resume Analysis" subtitle="Upload your resume for AI-powered ATS insights tailored to your target role" />
                 <motion.div
                     className={styles.uploadContainer}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                 >
                     <Card className={styles.uploadCard} glow="cyan">
+                        {/* Hidden file input */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept=".pdf"
+                            className={styles.hiddenInput}
+                            onChange={handleInputChange}
+                        />
+
+                        {/* Drop Zone */}
                         <div
-                            className={`${styles.dropZone} ${isDragOver ? styles.dragOver : ''}`}
+                            className={`${styles.dropZone} ${isDragOver ? styles.dragOver : ''} ${selectedFile ? styles.dropZoneSmall : ''}`}
                             onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
                             onDragLeave={() => setIsDragOver(false)}
-                            onDrop={(e) => { e.preventDefault(); setIsDragOver(false); handleAnalyze(); }}
+                            onDrop={handleDrop}
+                            onClick={handleBrowse}
                         >
-                            <div className={styles.dropIcon}>
-                                <Upload size={32} />
-                            </div>
-                            <h3 className={styles.dropTitle}>Drop your resume here</h3>
-                            <p className={styles.dropDesc}>
-                                Support for PDF, DOCX, and TXT files • Max 10MB
-                            </p>
-                            <div className={styles.dropDivider}>
-                                <span>or</span>
-                            </div>
-                            <Button
-                                icon={<FileText size={16} />}
-                                onClick={handleAnalyze}
-                                loading={isAnalyzing}
-                            >
-                                {isAnalyzing ? 'Analyzing...' : 'Browse Files'}
-                            </Button>
+                            {!selectedFile ? (
+                                <>
+                                    <div className={styles.dropIcon}>
+                                        <Upload size={32} />
+                                    </div>
+                                    <h3 className={styles.dropTitle}>Drop your resume here</h3>
+                                    <p className={styles.dropDesc}>
+                                        PDF files supported • Max 10MB
+                                    </p>
+                                    <div className={styles.dropDivider}>
+                                        <span>or</span>
+                                    </div>
+                                    <Button
+                                        icon={<FileText size={16} />}
+                                        onClick={(e: React.MouseEvent) => { e.stopPropagation(); handleBrowse(); }}
+                                    >
+                                        Browse Files
+                                    </Button>
+                                </>
+                            ) : (
+                                <div className={styles.filePreview} onClick={(e) => e.stopPropagation()}>
+                                    <div className={styles.fileIcon}>
+                                        <FileText size={24} />
+                                    </div>
+                                    <div className={styles.fileInfo}>
+                                        <span className={styles.fileName}>{selectedFile.name}</span>
+                                        <span className={styles.fileSize}>{formatFileSize(selectedFile.size)}</span>
+                                    </div>
+                                    <button
+                                        className={styles.fileRemove}
+                                        onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
+                            )}
                         </div>
+
+                        {/* Role Selector */}
+                        <div className={styles.roleSection}>
+                            <label className={styles.roleLabel}>
+                                <Briefcase size={14} />
+                                Target Role
+                            </label>
+                            <div className={styles.roleSelector} ref={dropdownRef}>
+                                <button
+                                    className={styles.roleDropdownBtn}
+                                    onClick={() => setShowRoleDropdown(!showRoleDropdown)}
+                                >
+                                    <span>{targetRole || 'Select a role...'}</span>
+                                    <ChevronDown size={16} className={showRoleDropdown ? styles.chevronUp : ''} />
+                                </button>
+
+                                <AnimatePresence>
+                                    {showRoleDropdown && (
+                                        <motion.div
+                                            className={styles.roleDropdown}
+                                            initial={{ opacity: 0, y: -8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -8 }}
+                                            transition={{ duration: 0.15 }}
+                                        >
+                                            {PREDEFINED_ROLES.map((role) => (
+                                                <button
+                                                    key={role}
+                                                    className={`${styles.roleOption} ${targetRole === role ? styles.roleOptionActive : ''}`}
+                                                    onClick={() => { setTargetRole(role); setCustomRole(''); setShowRoleDropdown(false); }}
+                                                >
+                                                    {role}
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            <div className={styles.customRoleWrap}>
+                                <input
+                                    type="text"
+                                    className={styles.customRoleInput}
+                                    placeholder="Or type a custom role..."
+                                    value={customRole}
+                                    onChange={(e) => { setCustomRole(e.target.value); setTargetRole(''); }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Error Message */}
+                        {error && (
+                            <motion.div
+                                className={styles.errorMsg}
+                                initial={{ opacity: 0, y: -5 }}
+                                animate={{ opacity: 1, y: 0 }}
+                            >
+                                <XCircle size={14} />
+                                {error}
+                            </motion.div>
+                        )}
+
+                        {/* Analyze Button */}
+                        <Button
+                            fullWidth
+                            icon={<Sparkles size={16} />}
+                            onClick={handleAnalyze}
+                            loading={isAnalyzing}
+                        >
+                            Analyze Resume for {getEffectiveRole()}
+                        </Button>
+
                         <div className={styles.uploadFeatures}>
                             <div className={styles.uploadFeature}>
                                 <Shield size={16} color="var(--accent-emerald)" />
-                                <span>ATS Compatibility Check</span>
+                                <span>ATS Compatibility</span>
                             </div>
                             <div className={styles.uploadFeature}>
                                 <Search size={16} color="var(--accent-blue)" />
-                                <span>Keyword Optimization</span>
+                                <span>Role Keywords</span>
                             </div>
                             <div className={styles.uploadFeature}>
                                 <Sparkles size={16} color="var(--accent-purple)" />
@@ -155,7 +458,9 @@ export default function ResumePage() {
         );
     }
 
-    // ── Analysis results (from database) ──
+    // ═══════════════════════════════════════════
+    // ANALYSIS RESULTS
+    // ═══════════════════════════════════════════
     const atsScore = analysis.atsScore;
     const keywordData = analysis.keywordData;
     const sectionScores = analysis.sectionScores;
@@ -185,18 +490,29 @@ export default function ResumePage() {
                             </ProgressRing>
                         </div>
                         <div className={styles.scoreRight}>
-                            <Badge variant={atsScore >= 80 ? 'emerald' : 'amber'} size="md">
-                                {getScoreLabel(atsScore)}
-                            </Badge>
+                            <div className={styles.scoreBadges}>
+                                <Badge variant={atsScore >= 80 ? 'emerald' : 'amber'} size="md">
+                                    {getScoreLabel(atsScore)}
+                                </Badge>
+                                {analysis.targetRole && (
+                                    <Badge variant="blue" size="md">
+                                        <Briefcase size={12} /> {analysis.targetRole}
+                                    </Badge>
+                                )}
+                            </div>
                             <h3 className={styles.scoreTitle}>Resume Health Report</h3>
                             <p className={styles.scoreDesc}>
-                                Your resume scores <strong>{atsScore}/100</strong> in ATS compatibility.
-                                There are <strong>{improvements.length} improvements</strong> that could boost your score
-                                significantly.
+                                Your resume scores <strong>{atsScore}/100</strong> for the <strong>{analysis.targetRole || 'general'}</strong> role.
+                                There are <strong>{improvements.length} improvements</strong> that could boost your score.
                             </p>
-                            <Button size="sm" variant="secondary" icon={<ArrowRight size={14} />}>
-                                Download Report
-                            </Button>
+                            <div className={styles.scoreActions}>
+                                <Button size="sm" variant="secondary" icon={<RefreshCw size={14} />} onClick={handleNewAnalysis}>
+                                    New Analysis
+                                </Button>
+                                <Button size="sm" variant="secondary" icon={<ArrowRight size={14} />}>
+                                    Download Report
+                                </Button>
+                            </div>
                         </div>
                     </div>
                 </Card>
@@ -252,7 +568,7 @@ export default function ResumePage() {
                     >
                         <Card>
                             <h3 className={styles.cardTitle}>
-                                <Search size={16} /> Keyword Density
+                                <Search size={16} /> Role-Specific Keywords
                             </h3>
                             <div className={styles.keywordGrid}>
                                 {keywordData.map((kw, i) => (
@@ -346,11 +662,11 @@ export default function ResumePage() {
                         <Card>
                             <h3 className={styles.cardTitle}>Quick Actions</h3>
                             <div className={styles.actionList}>
-                                <Button fullWidth variant="secondary" icon={<FileText size={16} />}>
-                                    Re-upload Resume
+                                <Button fullWidth variant="secondary" icon={<RefreshCw size={16} />} onClick={handleNewAnalysis}>
+                                    Analyze Another Resume
                                 </Button>
-                                <Button fullWidth variant="secondary" icon={<Target size={16} />}>
-                                    Compare with Job Description
+                                <Button fullWidth variant="secondary" icon={<Target size={16} />} onClick={handleNewAnalysis}>
+                                    Try Different Role
                                 </Button>
                                 <Button fullWidth icon={<Sparkles size={16} />}>
                                     AI Auto-Optimize
