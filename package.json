@@ -16,14 +16,18 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/react": "^3.0.169",
     "@auth/prisma-adapter": "^2.11.2",
     "@prisma/client": "^6.19.2",
+    "ai": "^6.0.167",
     "bcryptjs": "^3.0.3",
     "dotenv": "^17.3.1",
-    "framer-motion": "^12.35.0",
+    "framer-motion": "^12.38.0",
     "lucide-react": "^0.577.0",
     "next": "16.1.6",
     "next-auth": "^4.24.14",
+    "pdf2json": "^4.0.3",
     "prisma": "^6.19.2",
     "react": "19.2.3",
     "react-dom": "19.2.3"

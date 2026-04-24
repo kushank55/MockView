@@ -57,6 +57,12 @@ interface DashboardData {
         best: number;
         lastActive: string | null;
     };
+    insights: {
+        title: string;
+        subtitle: string;
+        action: string;
+        link: string;
+    }[];
     resumeScore: number | null;
 }
 
@@ -396,6 +402,33 @@ export default function DashboardPage() {
                         </Card>
                     </motion.div>
 
+                    {/* Resume Score Widget */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 15 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.4 }}
+                    >
+                        <Card className={styles.overallScore}>
+                            <h3 className={styles.cardTitle}>Resume ATS Match</h3>
+                            <div className={styles.scoreCenter}>
+                                {data.resumeScore !== null ? (
+                                    <ProgressRing progress={data.resumeScore} size={140} strokeWidth={10} color="var(--accent-cyan)">
+                                        <span className={styles.scoreValue}>{data.resumeScore}</span>
+                                        <span className={styles.scoreLabel}>/ 100</span>
+                                    </ProgressRing>
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: 'var(--space-xl) 0', color: 'var(--text-tertiary)' }}>
+                                        <FileText size={48} style={{ opacity: 0.3, margin: '0 auto var(--space-sm)' }} />
+                                        <p style={{ fontSize: 'var(--text-sm)', marginBottom: 'var(--space-md)' }}>No resume uploaded yet.</p>
+                                        <Link href="/resume">
+                                            <Button size="sm" variant="secondary">Analyze Resume</Button>
+                                        </Link>
+                                    </div>
+                                )}
+                            </div>
+                        </Card>
+                    </motion.div>
+
                     {/* Streak Tracker */}
                     <motion.div
                         initial={{ opacity: 0, y: 15 }}
@@ -467,7 +500,7 @@ export default function DashboardPage() {
                         </Card>
                     </motion.div>
 
-                    {/* Upcoming */}
+                    {/* AI Insights replacing Scheduled */}
                     <motion.div
                         initial={{ opacity: 0, y: 15 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -475,29 +508,23 @@ export default function DashboardPage() {
                     >
                         <Card>
                             <div className={styles.chartHeader}>
-                                <h3 className={styles.cardTitle}>Scheduled</h3>
-                                <CalendarDays size={18} color="var(--text-tertiary)" />
+                                <h3 className={styles.cardTitle}>Skill Insights</h3>
+                                <Zap size={18} color="var(--accent-purple)" />
                             </div>
-                            <div className={styles.scheduleItem}>
-                                <div className={styles.scheduleDate}>
-                                    <span className={styles.scheduleDay}>06</span>
-                                    <span className={styles.scheduleMonth}>Mar</span>
+                            {data.insights && data.insights.map((insight, idx) => (
+                                <div key={idx} className={styles.scheduleItem}>
+                                    <div className={styles.scheduleDate} style={{ background: 'var(--bg-tertiary)' }}>
+                                        <Target size={20} color="var(--text-secondary)" />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <p className={styles.scheduleTitle}>{insight.title}</p>
+                                        <p className={styles.scheduleSub}>{insight.subtitle}</p>
+                                        <Link href={insight.link} style={{ display: 'inline-block', marginTop: '6px', fontSize: '11px', color: 'var(--accent-blue)', fontWeight: 600 }}>
+                                            {insight.action} <ArrowRight size={10} style={{ display: 'inline', verticalAlign: 'middle' }} />
+                                        </Link>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p className={styles.scheduleTitle}>System Design Practice</p>
-                                    <p className={styles.scheduleSub}>Distributed Systems • 45 min</p>
-                                </div>
-                            </div>
-                            <div className={styles.scheduleItem}>
-                                <div className={styles.scheduleDate}>
-                                    <span className={styles.scheduleDay}>08</span>
-                                    <span className={styles.scheduleMonth}>Mar</span>
-                                </div>
-                                <div>
-                                    <p className={styles.scheduleTitle}>Behavioral Round</p>
-                                    <p className={styles.scheduleSub}>STAR Method • 30 min</p>
-                                </div>
-                            </div>
+                            ))}
                         </Card>
                     </motion.div>
                 </div>
