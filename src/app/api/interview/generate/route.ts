@@ -7,7 +7,8 @@ import { authOptions } from '@/lib/auth';
 // Node.js runtime is required for NextAuth and Prisma
 
 // System prompt for the persona of the AI interviewer
-const generateSystemPrompt = (topic: string, name: string) => `
+const generateSystemPrompt = (topic: string, name: string, resumeText?: string) => {
+    let basePrompt = `
 You are an expert technical and behavioral interviewer named 'MockView AI'.
 You are currently interviewing a candidate named '${name}' for a role relevant to: '${topic}'.
 
@@ -21,6 +22,25 @@ Rules:
 6. The interview must feel like a natural voice conversation.
 `;
 
+    if (resumeText) {
+        basePrompt += `
+IMPORTANT — RESUME CONTEXT:
+The candidate has provided their resume. You MUST use it to personalize your questions.
+- Ask about specific projects, technologies, and experiences mentioned in the resume.
+- Probe deeper into their listed skills and accomplishments.
+- Reference their work history and education when forming questions.
+- Start by acknowledging something from their resume before asking your first question.
+
+CANDIDATE'S RESUME:
+---
+${resumeText}
+---
+`;
+    }
+
+    return basePrompt;
+};
+
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions);
@@ -28,7 +48,7 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
         }
 
-        const { messages, topic } = await req.json();
+        const { messages, topic, resumeText } = await req.json();
 
         if (!messages || !topic) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
@@ -37,7 +57,7 @@ export async function POST(req: Request) {
         // Call the Google Gemini model via Vercel AI SDK
         const result = streamText({
             model: google('gemini-2.5-flash'),
-            system: generateSystemPrompt(topic, session.user.name || 'Candidate'),
+            system: generateSystemPrompt(topic, session.user.name || 'Candidate', resumeText),
             messages: messages as any[],
         });
 
