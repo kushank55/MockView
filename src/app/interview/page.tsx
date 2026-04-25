@@ -21,6 +21,9 @@ import {
     Lightbulb,
     TrendingUp,
     Zap,
+    Upload,
+    FileText,
+    X,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -50,6 +53,13 @@ export default function InterviewPage() {
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [isLoading, setIsLoading] = useState(false);
 
+    // Resume upload state
+    const [resumeFile, setResumeFile] = useState<File | null>(null);
+    const [resumeText, setResumeText] = useState('');
+    const [isParsingResume, setIsParsingResume] = useState(false);
+    const [resumeError, setResumeError] = useState('');
+    const resumeTextRef = useRef('');
+
     // ── Refs that mirror state so callbacks always read the latest values ──
     const currentAnswerRef = useRef(currentAnswer);
     const messagesRef = useRef(messages);
@@ -74,6 +84,7 @@ export default function InterviewPage() {
                 body: JSON.stringify({
                     messages: updatedMessages,
                     topic: selectedType,
+                    resumeText: resumeTextRef.current || undefined,
                 }),
             });
 
@@ -245,6 +256,82 @@ export default function InterviewPage() {
                             </div>
                         </div>
 
+                        {/* Resume Upload Section */}
+                        <div className={styles.resumeUploadSection}>
+                            <h3 className={styles.selectorLabel}>Upload Resume <span className={styles.optionalTag}>(Optional)</span></h3>
+                            <p className={styles.resumeHint}>Upload your resume for personalized questions based on your experience</p>
+
+                            {!resumeFile ? (
+                                <label className={styles.uploadZone}>
+                                    <input
+                                        type="file"
+                                        accept=".pdf"
+                                        className={styles.fileInput}
+                                        onChange={async (e) => {
+                                            const file = e.target.files?.[0];
+                                            if (!file) return;
+                                            setResumeFile(file);
+                                            setResumeError('');
+                                            setIsParsingResume(true);
+
+                                            try {
+                                                const formData = new FormData();
+                                                formData.append('resume', file);
+                                                const res = await fetch('/api/interview/parse-resume', {
+                                                    method: 'POST',
+                                                    body: formData,
+                                                });
+                                                if (!res.ok) {
+                                                    const err = await res.json();
+                                                    throw new Error(err.error || 'Failed to parse resume');
+                                                }
+                                                const data = await res.json();
+                                                setResumeText(data.text);
+                                                resumeTextRef.current = data.text;
+                                            } catch (err: any) {
+                                                setResumeError(err.message || 'Failed to parse resume');
+                                                setResumeFile(null);
+                                                setResumeText('');
+                                                resumeTextRef.current = '';
+                                            } finally {
+                                                setIsParsingResume(false);
+                                            }
+                                        }}
+                                    />
+                                    <Upload size={24} className={styles.uploadIcon} />
+                                    <span className={styles.uploadText}>Click to upload PDF resume</span>
+                                </label>
+                            ) : (
+                                <div className={styles.uploadedFile}>
+                                    <FileText size={18} className={styles.fileIcon} />
+                                    <span className={styles.fileName}>{resumeFile.name}</span>
+                                    {isParsingResume ? (
+                                        <span className={styles.parsingBadge}>Parsing...</span>
+                                    ) : resumeText ? (
+                                        <Badge variant="emerald" dot>Ready</Badge>
+                                    ) : null}
+                                    <button
+                                        className={styles.removeFileBtn}
+                                        onClick={() => {
+                                            setResumeFile(null);
+                                            setResumeText('');
+                                            setResumeError('');
+                                            resumeTextRef.current = '';
+                                        }}
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            )}
+
+                            {resumeError && (
+                                <div className={styles.resumeErrorMsg}>
+                                    <AlertCircle size={14} />
+                                    <span>{resumeError}</span>
+                                </div>
+                            )}
+                        </div>
+
                         <div className={styles.setupOptions}>
                             <div className={styles.optionRow}>
                                 <span>AI Difficulty</span>
@@ -258,19 +345,28 @@ export default function InterviewPage() {
                                 <span>AI Coach</span>
                                 <Badge variant="emerald" dot>Enabled</Badge>
                             </div>
+                            <div className={styles.optionRow}>
+                                <span>Resume</span>
+                                <Badge variant={resumeText ? 'emerald' : 'blue'} dot={!!resumeText}>
+                                    {resumeText ? 'Uploaded' : 'None'}
+                                </Badge>
+                            </div>
                         </div>
 
                         <Button
                             size="lg"
                             fullWidth
                             icon={<Mic size={18} />}
+                            disabled={isParsingResume}
                             onClick={() => {
                                 setIsActive(true);
-                                // Trigger first question by appending initial context
-                                append({ role: 'user', content: `Hi, I'm ready to begin the ${selectedType} interview.` });
+                                const resumeContext = resumeText
+                                    ? `Hi, I'm ready to begin the ${selectedType} interview. I've uploaded my resume for your reference.`
+                                    : `Hi, I'm ready to begin the ${selectedType} interview.`;
+                                append({ role: 'user', content: resumeContext });
                             }}
                         >
-                            Begin Interview
+                            {isParsingResume ? 'Parsing Resume...' : 'Begin Interview'}
                         </Button>
                     </Card>
                 </motion.div>
@@ -408,29 +504,51 @@ export default function InterviewPage() {
                             onClick={async () => {
                                 setIsLoading(true);
                                 try {
-                                    // Stop recording immediately
+                                    // Stop recording and speech immediately
                                     setIsActive(false);
+                                    stopSpeaking();
+                                    stopRecording();
 
-                                    // Generate placeholder score until AI evaluation is fully implemented
-                                    const baseScore = Math.floor(Math.random() * 16) + 75; // 75-90
+                                    const currentMessages = messagesRef.current;
 
+                                    // Step 1: Call AI evaluation endpoint
+                                    const evalRes = await fetch('/api/interview/evaluate', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            transcript: currentMessages,
+                                            type: selectedType,
+                                        }),
+                                    });
+
+                                    let evalData;
+                                    if (evalRes.ok) {
+                                        evalData = await evalRes.json();
+                                    } else {
+                                        console.warn('AI evaluation failed, using fallback scores');
+                                        const fallback = 70;
+                                        evalData = {
+                                            score: fallback,
+                                            feedback: { communication: fallback, technical: fallback, problemSolving: fallback, confidence: fallback },
+                                            coachTips: [{ type: 'tip', text: 'AI evaluation was unavailable. Try again for detailed feedback.', color: 'amber' }],
+                                            summary: 'Evaluation could not be completed.',
+                                        };
+                                    }
+
+                                    // Step 2: Save the interview with real AI feedback
                                     const res = await fetch('/api/interviews', {
                                         method: 'POST',
                                         headers: { 'Content-Type': 'application/json' },
                                         body: JSON.stringify({
                                             type: selectedType,
                                             topic: `${selectedType.charAt(0).toUpperCase() + selectedType.slice(1)} Interview`,
-                                            score: baseScore,
+                                            score: evalData.score,
                                             duration: `${Math.max(1, Math.ceil(timer / 60))} min`,
-                                            questions: Math.max(1, messages.filter((m: any) => m.role === 'assistant').length),
-                                            transcript: messages,
-                                            feedback: {
-                                                communication: baseScore + 2,
-                                                technical: baseScore - 3,
-                                                problemSolving: baseScore,
-                                                confidence: baseScore + 5
-                                            }
-                                        })
+                                            questions: Math.max(1, currentMessages.filter((m: any) => m.role === 'assistant').length),
+                                            transcript: currentMessages,
+                                            feedback: evalData.feedback,
+                                            coachTips: evalData.coachTips,
+                                        }),
                                     });
 
                                     if (!res.ok) {

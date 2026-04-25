@@ -160,7 +160,11 @@ export default function HistoryPage() {
                         >
                             {interviews.map((interview) => (
                                 <motion.div key={interview.id} variants={item}>
-                                    <Card className={styles.interviewCard} hover>
+                                    <Card
+                                        className={styles.interviewCard}
+                                        hover
+                                        onClick={() => window.location.href = `/history/${interview.id}`}
+                                    >
                                         <div className={styles.interviewTop}>
                                             <div className={styles.interviewIcon}>
                                                 <Mic size={18} />
@@ -194,6 +198,7 @@ export default function HistoryPage() {
                                             <Badge variant={getBadgeVariant(interview.score)} size="sm">
                                                 {interview.score >= 80 ? 'Passed' : 'Needs Work'}
                                             </Badge>
+                                            <ChevronRight size={14} style={{ marginLeft: 'auto', color: 'var(--text-tertiary)' }} />
                                         </div>
                                     </Card>
                                 </motion.div>
