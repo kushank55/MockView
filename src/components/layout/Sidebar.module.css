@@ -231,6 +231,30 @@
     background: rgba(244, 63, 94, 0.08);
 }
 
+/* Theme Toggle */
+.themeToggle {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 8px 12px;
+    border-radius: var(--radius-md);
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    background: none;
+    border: none;
+    width: 100%;
+    white-space: nowrap;
+    margin-bottom: var(--space-sm);
+}
+
+.themeToggle:hover {
+    color: var(--accent-amber);
+    background: rgba(245, 158, 11, 0.08);
+}
+
 /* Collapse Button */
 .collapseBtn {
     display: flex;

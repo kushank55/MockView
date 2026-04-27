@@ -3,6 +3,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import AppShell from '@/components/layout/AppShell';
 import AuthProvider from '@/components/providers/AuthProvider';
+import ThemeProvider from '@/components/providers/ThemeProvider';
 
 export const metadata: Metadata = {
   title: 'MockView AI — AI-Powered Mock Interviews & Resume Analysis',
@@ -17,11 +18,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body>
-        <AuthProvider>
-          <AppShell>{children}</AppShell>
-        </AuthProvider>
+        <ThemeProvider>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

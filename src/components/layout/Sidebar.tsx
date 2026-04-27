@@ -15,9 +15,12 @@ import {
     Sparkles,
     Zap,
     LogOut,
+    Sun,
+    Moon,
 } from 'lucide-react';
 import styles from './Sidebar.module.css';
 import { cn } from '@/lib/utils';
+import { useTheme } from '@/components/providers/ThemeProvider';
 
 const navItems = [
     { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -31,6 +34,7 @@ export default function Sidebar() {
     const [collapsed, setCollapsed] = useState(false);
     const pathname = usePathname();
     const { data: session } = useSession();
+    const { theme, toggleTheme } = useTheme();
 
     const userName = session?.user?.name || 'User';
     const userEmail = session?.user?.email || '';
@@ -107,6 +111,16 @@ export default function Sidebar() {
                     {!collapsed && <span>Sign out</span>}
                 </button>
             </div>
+
+            {/* Theme Toggle */}
+            <button
+                className={styles.themeToggle}
+                onClick={toggleTheme}
+                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            >
+                {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+                {!collapsed && <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>}
+            </button>
 
             {/* Collapse Toggle */}
             <button
