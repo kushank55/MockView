@@ -24,7 +24,6 @@ export async function GET(
             return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
         }
 
-        // Ensure the interview belongs to the requesting user
         if (interview.userId !== userId) {
             return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
         }
@@ -33,5 +32,41 @@ export async function GET(
     } catch (error) {
         console.error('GET /api/interviews/[id] error:', error);
         return NextResponse.json({ error: 'Failed to fetch interview' }, { status: 500 });
+    }
+}
+
+// DELETE /api/interviews/[id] — Delete an interview
+export async function DELETE(
+    req: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
+    try {
+        const session = await getServerSession(authOptions);
+        if (!session?.user || !(session.user as { id?: string }).id) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        }
+        const userId = (session.user as { id: string }).id;
+        const { id } = await params;
+
+        const interview = await db.interview.findUnique({
+            where: { id },
+        });
+
+        if (!interview) {
+            return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+        }
+
+        if (interview.userId !== userId) {
+            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+        }
+
+        await db.interview.delete({
+            where: { id },
+        });
+
+        return NextResponse.json({ success: true });
+    } catch (error) {
+        console.error('DELETE /api/interviews/[id] error:', error);
+        return NextResponse.json({ error: 'Failed to delete interview' }, { status: 500 });
     }
 }

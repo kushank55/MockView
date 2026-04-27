@@ -13,6 +13,7 @@ import {
     CheckCircle2,
     AlertCircle,
     Zap,
+    Trash2,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -78,6 +79,7 @@ export default function InterviewPlaybackPage() {
     const [interview, setInterview] = useState<InterviewData | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [deleting, setDeleting] = useState(false);
 
     useEffect(() => {
         if (!params.id) return;
@@ -133,6 +135,30 @@ export default function InterviewPlaybackPage() {
 
             <button className={styles.backLink} onClick={() => router.push('/history')}>
                 <ArrowLeft size={14} /> Back to History
+            </button>
+
+            {/* Delete Button */}
+            <button
+                className={styles.deleteBtn}
+                disabled={deleting}
+                onClick={async () => {
+                    if (!confirm('Are you sure you want to delete this interview? This cannot be undone.')) return;
+                    setDeleting(true);
+                    try {
+                        const res = await fetch(`/api/interviews/${params.id}`, { method: 'DELETE' });
+                        if (res.ok) {
+                            router.push('/history');
+                        } else {
+                            alert('Failed to delete interview');
+                            setDeleting(false);
+                        }
+                    } catch {
+                        alert('Failed to delete interview');
+                        setDeleting(false);
+                    }
+                }}
+            >
+                <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete Interview'}
             </button>
 
             {/* Overview Header */}

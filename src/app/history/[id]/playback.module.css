@@ -21,6 +21,35 @@
     color: var(--accent-blue);
 }
 
+/* Delete Button */
+.deleteBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--text-tertiary);
+    background: transparent;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all var(--transition-base);
+    margin-left: var(--space-md);
+    margin-bottom: var(--space-lg);
+}
+
+.deleteBtn:hover {
+    color: var(--accent-rose);
+    border-color: var(--accent-rose);
+    background: rgba(244, 63, 94, 0.08);
+}
+
+.deleteBtn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* Overview Header */
 .overviewHeader {
     display: flex;
