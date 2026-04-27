@@ -245,6 +245,20 @@
     background: linear-gradient(to right, var(--accent-rose), var(--accent-amber), var(--accent-emerald));
 }
 
+/* Score Trend Chart */
+.trendSvg {
+    width: 100%;
+    margin-bottom: var(--space-sm);
+}
+
+.trendLabels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 10px;
+    color: var(--text-tertiary);
+    font-weight: 600;
+}
+
 /* Loading Skeleton */
 .skeleton {
     height: 90px;

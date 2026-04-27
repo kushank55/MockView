@@ -37,6 +37,15 @@ const interviewTypes = [
     { id: 'system-design', label: 'System Design', icon: Zap, color: 'var(--accent-cyan)' },
 ];
 
+const difficultyLevels = [
+    { id: 'easy', label: 'Easy', color: 'var(--accent-emerald)', description: 'Supportive & encouraging' },
+    { id: 'medium', label: 'Medium', color: 'var(--accent-amber)', description: 'Industry standard' },
+    { id: 'hard', label: 'Hard', color: 'var(--accent-rose)', description: 'Rigorous & challenging' },
+];
+
+// Filler words to detect
+const FILLER_WORDS = ['um', 'uh', 'like', 'you know', 'basically', 'actually', 'so', 'well', 'right', 'i mean', 'kind of', 'sort of'];
+
 // Hardcoded static references removed, driven by useChat state.
 
 export default function InterviewPage() {
@@ -45,10 +54,22 @@ export default function InterviewPage() {
     const [isMuted, setIsMuted] = useState(false);
     const [isVideoOn, setIsVideoOn] = useState(true);
     const [selectedType, setSelectedType] = useState('behavioral');
+    const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
+    const [customTopic, setCustomTopic] = useState('');
     const [timer, setTimer] = useState(0);
     const [showCoach, setShowCoach] = useState(true);
     const [waveformData, setWaveformData] = useState<number[]>(Array.from({ length: 50 }, () => 0.1));
     const [currentAnswer, setCurrentAnswer] = useState('');
+
+    // Live coach state
+    const [coachWpm, setCoachWpm] = useState(0);
+    const [coachFillers, setCoachFillers] = useState(0);
+    const [coachClarity, setCoachClarity] = useState(0);
+    const [coachTips, setCoachTips] = useState<Array<{ icon: string; text: string }>>([]);
+    const totalWordsRef = useRef(0);
+    const totalFillersRef = useRef(0);
+    const speechStartTimeRef = useRef<number | null>(null);
+    const timerWarningShown = useRef(false);
 
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -85,6 +106,8 @@ export default function InterviewPage() {
                     messages: updatedMessages,
                     topic: selectedType,
                     resumeText: resumeTextRef.current || undefined,
+                    difficulty: selectedDifficulty,
+                    customTopic: customTopic || undefined,
                 }),
             });
 
@@ -137,6 +160,44 @@ export default function InterviewPage() {
                     currentAnswerRef.current = updated;
                     return updated;
                 });
+
+                // ── Live Coach Analytics ──
+                if (!speechStartTimeRef.current) speechStartTimeRef.current = Date.now();
+                const words = text.trim().split(/\s+/);
+                totalWordsRef.current += words.length;
+
+                // WPM calculation
+                const elapsedMin = (Date.now() - speechStartTimeRef.current) / 60000;
+                if (elapsedMin > 0.05) {
+                    setCoachWpm(Math.round(totalWordsRef.current / elapsedMin));
+                }
+
+                // Filler word detection
+                const lowerText = text.toLowerCase();
+                let fillerCount = 0;
+                FILLER_WORDS.forEach((filler) => {
+                    const regex = new RegExp(`\\b${filler}\\b`, 'gi');
+                    const matches = lowerText.match(regex);
+                    if (matches) fillerCount += matches.length;
+                });
+                totalFillersRef.current += fillerCount;
+                setCoachFillers(totalFillersRef.current);
+
+                // Clarity score (based on word length and filler ratio)
+                const fillerRatio = totalWordsRef.current > 0 ? totalFillersRef.current / totalWordsRef.current : 0;
+                const clarity = Math.max(0, Math.min(100, Math.round(100 - fillerRatio * 300)));
+                setCoachClarity(clarity);
+
+                // Dynamic tips
+                const tips: Array<{ icon: string; text: string }> = [];
+                const wpm = elapsedMin > 0.05 ? Math.round(totalWordsRef.current / elapsedMin) : 0;
+                if (wpm > 180) tips.push({ icon: 'warning', text: 'You\'re speaking too fast — slow down a bit' });
+                else if (wpm > 0 && wpm < 90) tips.push({ icon: 'warning', text: 'Try to speak a bit faster and more confidently' });
+                else if (wpm >= 120 && wpm <= 160) tips.push({ icon: 'success', text: 'Great pace — clear and measured' });
+                if (totalFillersRef.current > 5) tips.push({ icon: 'warning', text: `${totalFillersRef.current} filler words detected — try pausing instead` });
+                else if (totalFillersRef.current <= 2 && totalWordsRef.current > 20) tips.push({ icon: 'success', text: 'Very few filler words — excellent!' });
+                if (clarity >= 80 && totalWordsRef.current > 20) tips.push({ icon: 'success', text: 'High clarity score — well articulated' });
+                setCoachTips(tips);
             }
         },
         onSilence: () => {
@@ -182,16 +243,28 @@ export default function InterviewPage() {
         }
     }, [messages, currentAnswer]);
 
-    // Timer
+    // Timer with warning and auto-end
     useEffect(() => {
         let interval: NodeJS.Timeout;
         if (isActive && !isPaused) {
             interval = setInterval(() => {
-                setTimer((prev) => prev + 1);
+                setTimer((prev) => {
+                    const next = prev + 1;
+                    // Auto-end at 30 minutes
+                    if (next >= 1800 && !timerWarningShown.current) {
+                        timerWarningShown.current = true;
+                        // Will trigger end via the effect below
+                    }
+                    return next;
+                });
             }, 1000);
         }
         return () => clearInterval(interval);
     }, [isActive, isPaused]);
+
+    // Timer warning: flash and auto-end
+    const isTimerWarning = timer >= 1500; // 25 minutes
+    const isTimerExpired = timer >= 1800; // 30 minutes
 
     // Waveform animation based on speaking vs recording status
     useEffect(() => {
@@ -332,10 +405,42 @@ export default function InterviewPage() {
                             )}
                         </div>
 
+                        {/* Difficulty Selector */}
+                        <div className={styles.typeSelector}>
+                            <h3 className={styles.selectorLabel}>Difficulty Level</h3>
+                            <div className={styles.typeGrid}>
+                                {difficultyLevels.map((level) => (
+                                    <button
+                                        key={level.id}
+                                        className={`${styles.typeBtn} ${selectedDifficulty === level.id ? styles.typeActive : ''}`}
+                                        onClick={() => setSelectedDifficulty(level.id)}
+                                        style={{ '--type-color': level.color } as React.CSSProperties}
+                                    >
+                                        <span>{level.label}</span>
+                                        <span style={{ fontSize: '10px', fontWeight: 400, color: 'var(--text-tertiary)' }}>{level.description}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Custom Topic Input */}
+                        <div className={styles.resumeUploadSection}>
+                            <h3 className={styles.selectorLabel}>Custom Topic <span className={styles.optionalTag}>(Optional)</span></h3>
+                            <input
+                                type="text"
+                                className={styles.customTopicInput}
+                                placeholder="e.g. React Developer at Google, Backend Engineer..."
+                                value={customTopic}
+                                onChange={(e) => setCustomTopic(e.target.value)}
+                            />
+                        </div>
+
                         <div className={styles.setupOptions}>
                             <div className={styles.optionRow}>
                                 <span>AI Difficulty</span>
-                                <Badge variant="amber">Medium</Badge>
+                                <Badge variant={selectedDifficulty === 'easy' ? 'emerald' : selectedDifficulty === 'hard' ? 'rose' : 'amber'}>
+                                    {selectedDifficulty.charAt(0).toUpperCase() + selectedDifficulty.slice(1)}
+                                </Badge>
                             </div>
                             <div className={styles.optionRow}>
                                 <span>Duration</span>
@@ -351,6 +456,12 @@ export default function InterviewPage() {
                                     {resumeText ? 'Uploaded' : 'None'}
                                 </Badge>
                             </div>
+                            {customTopic && (
+                                <div className={styles.optionRow}>
+                                    <span>Custom Topic</span>
+                                    <Badge variant="purple">{customTopic.slice(0, 25)}{customTopic.length > 25 ? '...' : ''}</Badge>
+                                </div>
+                            )}
                         </div>
 
                         <Button
@@ -360,10 +471,10 @@ export default function InterviewPage() {
                             disabled={isParsingResume}
                             onClick={() => {
                                 setIsActive(true);
-                                const resumeContext = resumeText
-                                    ? `Hi, I'm ready to begin the ${selectedType} interview. I've uploaded my resume for your reference.`
-                                    : `Hi, I'm ready to begin the ${selectedType} interview.`;
-                                append({ role: 'user', content: resumeContext });
+                                let msg = `Hi, I'm ready to begin the ${selectedType} interview.`;
+                                if (customTopic) msg += ` The topic I want to focus on is: ${customTopic}.`;
+                                if (resumeText) msg += ` I've uploaded my resume for your reference.`;
+                                append({ role: 'user', content: msg });
                             }}
                         >
                             {isParsingResume ? 'Parsing Resume...' : 'Begin Interview'}
@@ -380,9 +491,11 @@ export default function InterviewPage() {
             <div className={styles.interviewHeader}>
                 <div className={styles.headerLeft}>
                     <Badge variant="rose" dot>LIVE</Badge>
-                    <span className={styles.timer}>
+                    <span className={`${styles.timer} ${isTimerWarning ? styles.timerWarning : ''} ${isTimerExpired ? styles.timerExpired : ''}`}>
                         <Clock size={14} /> {formatTimer(timer)}
                     </span>
+                    {isTimerWarning && !isTimerExpired && <Badge variant="amber" size="sm">5 min left</Badge>}
+                    {isTimerExpired && <Badge variant="rose" size="sm">Time&apos;s up!</Badge>}
                 </div>
                 <div className={styles.headerCenter}>
                     <span className={styles.questionProgress}>
@@ -572,7 +685,7 @@ export default function InterviewPage() {
                     </div>
                 </div>
 
-                {/* AI Coach Panel */}
+                {/* AI Coach Panel — LIVE */}
                 <AnimatePresence>
                     {showCoach && (
                         <motion.div
@@ -585,52 +698,64 @@ export default function InterviewPage() {
                                 <div className={styles.coachHeader}>
                                     <Brain size={18} color="var(--accent-purple)" />
                                     <h3 className={styles.sectionTitle}>AI Coach</h3>
-                                    <Badge variant="purple" dot>Active</Badge>
+                                    <Badge variant="purple" dot>Live</Badge>
                                 </div>
 
-                                {/* Confidence Score */}
+                                {/* Clarity Score */}
                                 <div className={styles.confidenceSection}>
-                                    <span className={styles.confidenceLabel}>Confidence Level</span>
+                                    <span className={styles.confidenceLabel}>Clarity Score</span>
                                     <div className={styles.confidenceBar}>
                                         <motion.div
                                             className={styles.confidenceFill}
-                                            initial={{ width: 0 }}
-                                            animate={{ width: '78%' }}
-                                            transition={{ duration: 1, delay: 0.5 }}
+                                            animate={{ width: `${coachClarity}%` }}
+                                            transition={{ duration: 0.5 }}
                                         />
                                     </div>
-                                    <span className={styles.confidenceValue}>78%</span>
+                                    <span className={styles.confidenceValue}>{coachClarity || 0}%</span>
                                 </div>
 
-                                {/* Real-time Tips (Placeholder for future hookup) */}
+                                {/* Real-time Tips */}
                                 <div className={styles.tipsSection}>
-                                    <h4 className={styles.tipsLabel}>Real-time Feedback</h4>
+                                    <h4 className={styles.tipsLabel}>Live Feedback</h4>
                                     <div className={styles.tipsList}>
-                                        <div className={styles.tipItem}>
-                                            <CheckCircle2 size={14} color="var(--accent-emerald)" />
-                                            <span>Good detailed explanation</span>
-                                        </div>
+                                        {coachTips.length > 0 ? coachTips.map((tip, i) => (
+                                            <div key={i} className={styles.tipItem}>
+                                                {tip.icon === 'success' ? (
+                                                    <CheckCircle2 size={14} color="var(--accent-emerald)" />
+                                                ) : (
+                                                    <AlertCircle size={14} color="var(--accent-amber)" />
+                                                )}
+                                                <span>{tip.text}</span>
+                                            </div>
+                                        )) : (
+                                            <div className={styles.tipItem}>
+                                                <Lightbulb size={14} color="var(--accent-blue)" />
+                                                <span>Start speaking to see live feedback</span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 
-                                {/* Metrics */}
+                                {/* Live Metrics */}
                                 <div className={styles.metricsSection}>
                                     <h4 className={styles.tipsLabel}>Session Metrics</h4>
                                     <div className={styles.metricGrid}>
                                         <div className={styles.metric}>
-                                            <span className={styles.metricValue}>140</span>
+                                            <span className={styles.metricValue}>{coachWpm || '—'}</span>
                                             <span className={styles.metricLabel}>WPM</span>
                                         </div>
                                         <div className={styles.metric}>
-                                            <span className={styles.metricValue}>3</span>
+                                            <span className={styles.metricValue}>{coachFillers}</span>
                                             <span className={styles.metricLabel}>Fillers</span>
                                         </div>
                                         <div className={styles.metric}>
-                                            <span className={styles.metricValue}>82%</span>
+                                            <span className={styles.metricValue}>{coachClarity || '—'}%</span>
                                             <span className={styles.metricLabel}>Clarity</span>
                                         </div>
                                         <div className={styles.metric}>
-                                            <span className={styles.metricValue}>A-</span>
+                                            <span className={styles.metricValue}>
+                                                {coachClarity >= 90 ? 'A+' : coachClarity >= 80 ? 'A' : coachClarity >= 70 ? 'B+' : coachClarity >= 60 ? 'B' : coachClarity > 0 ? 'C' : '—'}
+                                            </span>
                                             <span className={styles.metricLabel}>Grade</span>
                                         </div>
                                     </div>

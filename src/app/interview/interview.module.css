@@ -252,6 +252,44 @@
     font-weight: 600;
     font-family: var(--font-mono);
     color: var(--text-secondary);
+    transition: color 0.3s;
+}
+
+.timerWarning {
+    color: var(--accent-amber);
+    animation: timerPulse 1s ease-in-out infinite;
+}
+
+.timerExpired {
+    color: var(--accent-rose);
+    animation: timerPulse 0.5s ease-in-out infinite;
+}
+
+@keyframes timerPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+/* Custom Topic Input */
+.customTopicInput {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    font-size: var(--text-sm);
+    font-family: inherit;
+    outline: none;
+    transition: border-color var(--transition-base);
+}
+
+.customTopicInput::placeholder {
+    color: var(--text-tertiary);
+}
+
+.customTopicInput:focus {
+    border-color: var(--accent-blue);
 }
 
 .questionProgress {
@@ -612,7 +650,9 @@
 }
 
 /* Metrics */
-.metricsSection {}
+.metricsSection {
+    margin-top: var(--space-sm);
+}
 
 .metricGrid {
     display: grid;
