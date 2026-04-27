@@ -98,6 +98,36 @@
   --content-max-width: 1200px;
 }
 
+/* ---------- Light Theme Overrides ---------- */
+[data-theme='light'] {
+  --bg-primary: #f8fafc;
+  --bg-secondary: #f1f5f9;
+  --bg-tertiary: #e2e8f0;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-card-hover: rgba(255, 255, 255, 0.95);
+  --bg-glass: rgba(0, 0, 0, 0.02);
+  --bg-glass-hover: rgba(0, 0, 0, 0.04);
+
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-tertiary: #94a3b8;
+  --text-muted: #cbd5e1;
+
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --border-medium: rgba(0, 0, 0, 0.12);
+  --border-accent: rgba(59, 130, 246, 0.3);
+
+  --gradient-hero: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 40%, #ede9fe 70%, #f8fafc 100%);
+  --gradient-card: linear-gradient(135deg, rgba(59, 130, 246, 0.05) 0%, rgba(139, 92, 246, 0.05) 100%);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-xl: 0 20px 60px rgba(0, 0, 0, 0.15);
+  --shadow-glow-blue: 0 0 40px rgba(59, 130, 246, 0.1);
+  --shadow-glow-purple: 0 0 40px rgba(139, 92, 246, 0.1);
+}
+
 /* ---------- Reset & Base ---------- */
 *,
 *::before,
