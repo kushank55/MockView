@@ -671,8 +671,9 @@ export default function InterviewPage() {
                                         return;
                                     }
 
-                                    // Force relocation so the dashboard safely hard-reloads its server components
-                                    window.location.href = '/dashboard';
+                                    // Redirect to the detailed results page with STAR builder
+                                    const savedInterview = await res.json();
+                                    window.location.href = `/history/${savedInterview.id}`;
                                 } catch (err) {
                                     console.error('Failed to save interview', err);
                                     setTimer(0);
