@@ -92,6 +92,15 @@ export default function InterviewPage() {
     const [resumeError, setResumeError] = useState('');
     const resumeTextRef = useRef('');
 
+    // A previously analyzed resume the user can reuse instead of re-uploading.
+    const [savedResume, setSavedResume] = useState<{
+        fileName: string;
+        targetRole: string;
+        atsScore: number;
+        resumeText: string;
+    } | null>(null);
+    const [usingSavedResume, setUsingSavedResume] = useState(false);
+
     // ── Refs that mirror state so callbacks always read the latest values ──
     const currentAnswerRef = useRef(currentAnswer);
     const messagesRef = useRef(messages);
@@ -228,6 +237,38 @@ export default function InterviewPage() {
     // Keep isSpeakingRef in sync
     useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
 
+    // Offer the most recently analyzed resume so the user doesn't have to
+    // upload the same PDF they already ran through the resume analyzer.
+    useEffect(() => {
+        let cancelled = false;
+        fetch('/api/resume/latest')
+            .then((res) => (res.ok ? res.json() : { resume: null }))
+            .then((data) => {
+                if (!cancelled && data?.resume?.resumeText) {
+                    setSavedResume(data.resume);
+                }
+            })
+            .catch((err) => console.error('Failed to load saved resume:', err));
+        return () => { cancelled = true; };
+    }, []);
+
+    const useSavedResume = () => {
+        if (!savedResume) return;
+        setResumeText(savedResume.resumeText);
+        resumeTextRef.current = savedResume.resumeText;
+        setUsingSavedResume(true);
+        setResumeFile(null);
+        setResumeError('');
+    };
+
+    const clearResume = () => {
+        setResumeFile(null);
+        setResumeText('');
+        setResumeError('');
+        setUsingSavedResume(false);
+        resumeTextRef.current = '';
+    };
+
     // Submits a typed answer — the fallback path for browsers without speech
     // recognition, and an escape hatch when dictation mishears something.
     const submitTypedAnswer = () => {
@@ -359,7 +400,31 @@ export default function InterviewPage() {
                             <h3 className={styles.selectorLabel}>Upload Resume <span className={styles.optionalTag}>(Optional)</span></h3>
                             <p className={styles.resumeHint}>Upload your resume for personalized questions based on your experience</p>
 
-                            {!resumeFile ? (
+                            {/* Reuse the resume already analyzed on the Resume page */}
+                            {savedResume && !resumeFile && !usingSavedResume && (
+                                <button className={styles.savedResumeCard} onClick={useSavedResume}>
+                                    <FileText size={18} className={styles.fileIcon} />
+                                    <div className={styles.savedResumeInfo}>
+                                        <span className={styles.fileName}>{savedResume.fileName}</span>
+                                        <span className={styles.savedResumeMeta}>
+                                            Already analyzed · ATS {savedResume.atsScore}
+                                            {savedResume.targetRole ? ` · ${savedResume.targetRole}` : ''}
+                                        </span>
+                                    </div>
+                                    <span className={styles.savedResumeAction}>Use this</span>
+                                </button>
+                            )}
+
+                            {usingSavedResume && savedResume ? (
+                                <div className={styles.uploadedFile}>
+                                    <FileText size={18} className={styles.fileIcon} />
+                                    <span className={styles.fileName}>{savedResume.fileName}</span>
+                                    <Badge variant="emerald" dot>Ready</Badge>
+                                    <button className={styles.removeFileBtn} onClick={clearResume}>
+                                        <X size={14} />
+                                    </button>
+                                </div>
+                            ) : !resumeFile ? (
                                 <label className={styles.uploadZone}>
                                     <input
                                         type="file"
@@ -408,15 +473,7 @@ export default function InterviewPage() {
                                     ) : resumeText ? (
                                         <Badge variant="emerald" dot>Ready</Badge>
                                     ) : null}
-                                    <button
-                                        className={styles.removeFileBtn}
-                                        onClick={() => {
-                                            setResumeFile(null);
-                                            setResumeText('');
-                                            setResumeError('');
-                                            resumeTextRef.current = '';
-                                        }}
-                                    >
+                                    <button className={styles.removeFileBtn} onClick={clearResume}>
                                         <X size={14} />
                                     </button>
                                 </div>
