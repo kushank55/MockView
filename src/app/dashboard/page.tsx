@@ -15,8 +15,13 @@ import {
     Target,
     Star,
     CalendarDays,
+    Plus,
+    Trash2,
+    Check,
+    X,
 } from 'lucide-react';
 import Link from 'next/link';
+import { GOAL_METRICS } from '@/lib/goals';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
@@ -47,10 +52,13 @@ interface DashboardData {
         confidence: number;
     };
     goals: {
+        id: string;
         label: string;
+        metric: string;
         target: number;
         current: number;
         progress: number;
+        complete: boolean;
     }[];
     streak: {
         current: number;
@@ -99,9 +107,16 @@ export default function DashboardPage() {
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
 
-    // ── Fetch dashboard data on mount ──
-    useEffect(() => {
-        fetch('/api/dashboard')
+    // ── Goal editor state ──
+    const [isAddingGoal, setIsAddingGoal] = useState(false);
+    const [goalLabel, setGoalLabel] = useState('');
+    const [goalMetric, setGoalMetric] = useState<string>(GOAL_METRICS[0].id);
+    const [goalTarget, setGoalTarget] = useState<string>(String(GOAL_METRICS[0].defaultTarget));
+    const [goalError, setGoalError] = useState('');
+    const [savingGoal, setSavingGoal] = useState(false);
+
+    const loadDashboard = React.useCallback(() => {
+        return fetch('/api/dashboard')
             .then((res) => res.json())
             .then((apiData) => {
                 if (apiData && apiData.stats) {
@@ -114,6 +129,63 @@ export default function DashboardPage() {
                 setLoading(false);
             });
     }, []);
+
+    useEffect(() => {
+        loadDashboard();
+    }, [loadDashboard]);
+
+    // Picking a metric pre-fills a sensible target and label for that metric.
+    const selectMetric = (metricId: string) => {
+        const metric = GOAL_METRICS.find((m) => m.id === metricId) ?? GOAL_METRICS[0];
+        setGoalMetric(metric.id);
+        setGoalTarget(String(metric.defaultTarget));
+        if (!goalLabel.trim()) setGoalLabel(metric.label);
+    };
+
+    const resetGoalForm = () => {
+        setIsAddingGoal(false);
+        setGoalLabel('');
+        setGoalMetric(GOAL_METRICS[0].id);
+        setGoalTarget(String(GOAL_METRICS[0].defaultTarget));
+        setGoalError('');
+    };
+
+    const createGoal = async () => {
+        setGoalError('');
+        setSavingGoal(true);
+        try {
+            const res = await fetch('/api/goals', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    label: goalLabel.trim() || GOAL_METRICS.find((m) => m.id === goalMetric)?.label,
+                    metric: goalMetric,
+                    target: Number(goalTarget),
+                }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Could not create goal');
+            }
+            resetGoalForm();
+            await loadDashboard();
+        } catch (err) {
+            setGoalError(err instanceof Error ? err.message : 'Could not create goal');
+        } finally {
+            setSavingGoal(false);
+        }
+    };
+
+    const deleteGoal = async (id: string) => {
+        // Drop it locally right away so the list feels responsive, then resync.
+        setData((prev) => (prev ? { ...prev, goals: prev.goals.filter((g) => g.id !== id) } : prev));
+        try {
+            await fetch(`/api/goals?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+        } catch (err) {
+            console.error('Failed to delete goal:', err);
+        }
+        await loadDashboard();
+    };
 
     // ── Loading state ──
     if (loading) {
@@ -475,28 +547,110 @@ export default function DashboardPage() {
                         <Card>
                             <div className={styles.chartHeader}>
                                 <h3 className={styles.cardTitle}>Goals</h3>
-                                <Target size={18} color="var(--text-tertiary)" />
+                                {isAddingGoal ? (
+                                    <Target size={18} color="var(--text-tertiary)" />
+                                ) : (
+                                    <button
+                                        className={styles.goalAddBtn}
+                                        onClick={() => setIsAddingGoal(true)}
+                                        aria-label="Add a goal"
+                                    >
+                                        <Plus size={16} />
+                                    </button>
+                                )}
                             </div>
-                            <div className={styles.goalsList}>
-                                {data.goals.map((goal, i) => (
-                                    <div key={i} className={styles.goalItem}>
-                                        <div className={styles.goalInfo}>
-                                            <span className={styles.goalLabel}>{goal.label}</span>
-                                            <span className={styles.goalProgress}>
-                                                {goal.current}/{goal.target}
-                                            </span>
+
+                            {data.goals.length === 0 && !isAddingGoal ? (
+                                <div className={styles.goalsEmpty}>
+                                    <Target size={28} color="var(--text-tertiary)" />
+                                    <p className={styles.goalsEmptyText}>
+                                        No goals yet. Set one to track your progress automatically.
+                                    </p>
+                                    <Button
+                                        variant="secondary"
+                                        size="sm"
+                                        icon={<Plus size={14} />}
+                                        onClick={() => setIsAddingGoal(true)}
+                                    >
+                                        Add a goal
+                                    </Button>
+                                </div>
+                            ) : (
+                                <div className={styles.goalsList}>
+                                    {data.goals.map((goal, i) => (
+                                        <div key={goal.id} className={styles.goalItem}>
+                                            <div className={styles.goalInfo}>
+                                                <span className={styles.goalLabel}>
+                                                    {goal.complete && (
+                                                        <Check size={13} color="var(--accent-emerald)" />
+                                                    )}
+                                                    {goal.label}
+                                                </span>
+                                                <span className={styles.goalProgress}>
+                                                    {goal.current}/{goal.target}
+                                                </span>
+                                                <button
+                                                    className={styles.goalDeleteBtn}
+                                                    onClick={() => deleteGoal(goal.id)}
+                                                    aria-label={`Delete goal ${goal.label}`}
+                                                >
+                                                    <Trash2 size={13} />
+                                                </button>
+                                            </div>
+                                            <div className={styles.goalBar}>
+                                                <motion.div
+                                                    className={styles.goalFill}
+                                                    initial={{ width: 0 }}
+                                                    animate={{ width: `${goal.progress}%` }}
+                                                    transition={{ delay: 0.6 + i * 0.15, duration: 0.8 }}
+                                                />
+                                            </div>
                                         </div>
-                                        <div className={styles.goalBar}>
-                                            <motion.div
-                                                className={styles.goalFill}
-                                                initial={{ width: 0 }}
-                                                animate={{ width: `${goal.progress}%` }}
-                                                transition={{ delay: 0.6 + i * 0.15, duration: 0.8 }}
-                                            />
-                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {isAddingGoal && (
+                                <div className={styles.goalForm}>
+                                    <input
+                                        className={styles.goalInput}
+                                        placeholder="Goal name"
+                                        maxLength={60}
+                                        value={goalLabel}
+                                        onChange={(e) => setGoalLabel(e.target.value)}
+                                    />
+                                    <div className={styles.goalFormRow}>
+                                        <select
+                                            className={styles.goalSelect}
+                                            value={goalMetric}
+                                            onChange={(e) => selectMetric(e.target.value)}
+                                        >
+                                            {GOAL_METRICS.map((m) => (
+                                                <option key={m.id} value={m.id}>
+                                                    {m.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            className={styles.goalTargetInput}
+                                            type="number"
+                                            min={1}
+                                            value={goalTarget}
+                                            onChange={(e) => setGoalTarget(e.target.value)}
+                                            aria-label="Target value"
+                                        />
                                     </div>
-                                ))}
-                            </div>
+                                    {goalError && <p className={styles.goalErrorMsg}>{goalError}</p>}
+                                    <div className={styles.goalFormActions}>
+                                        <Button size="sm" loading={savingGoal} onClick={createGoal}>
+                                            Save goal
+                                        </Button>
+                                        <button className={styles.goalCancelBtn} onClick={resetGoalForm}>
+                                            <X size={14} /> Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </Card>
                     </motion.div>
 

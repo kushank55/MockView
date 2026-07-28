@@ -144,13 +144,13 @@ async function main() {
     // Create goals
     const goals = await Promise.all([
         prisma.goal.create({
-            data: { userId: user.id, label: 'Complete 30 Interviews', target: 30, current: 24 },
+            data: { userId: user.id, label: 'Complete 30 Interviews', target: 30, metric: 'interviews' },
         }),
         prisma.goal.create({
-            data: { userId: user.id, label: 'Reach Level 10', target: 10, current: 8 },
+            data: { userId: user.id, label: 'Hold a 14-day streak', target: 14, metric: 'streak' },
         }),
         prisma.goal.create({
-            data: { userId: user.id, label: 'Improve Resume to 90+', target: 90, current: 76 },
+            data: { userId: user.id, label: 'Improve Resume to 90+', target: 90, metric: 'resumeScore' },
         }),
     ]);
     console.log(`✅ Created ${goals.length} goals`);
