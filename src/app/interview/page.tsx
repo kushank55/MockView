@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSpeech } from '@/hooks/useSpeech';
 import { useCamera } from '@/hooks/useCamera';
@@ -50,7 +51,17 @@ const FILLER_WORDS = ['um', 'uh', 'like', 'you know', 'basically', 'actually', '
 
 // Hardcoded static references removed, driven by useChat state.
 
+// useSearchParams requires a Suspense boundary during prerendering.
 export default function InterviewPage() {
+    return (
+        <Suspense fallback={null}>
+            <InterviewSession />
+        </Suspense>
+    );
+}
+
+function InterviewSession() {
+    const searchParams = useSearchParams();
     const [isActive, setIsActive] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
@@ -63,9 +74,17 @@ export default function InterviewPage() {
         stop: stopCamera,
         toggle: toggleCamera,
     } = useCamera();
-    const [selectedType, setSelectedType] = useState('behavioral');
-    const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
-    const [customTopic, setCustomTopic] = useState('');
+    // Prefilled from the dashboard's "practice this weak skill" deep link.
+    // Unknown values fall back to the defaults rather than breaking the form.
+    const [selectedType, setSelectedType] = useState(() => {
+        const type = searchParams.get('type');
+        return interviewTypes.some((t) => t.id === type) ? (type as string) : 'behavioral';
+    });
+    const [selectedDifficulty, setSelectedDifficulty] = useState(() => {
+        const difficulty = searchParams.get('difficulty');
+        return difficultyLevels.some((d) => d.id === difficulty) ? (difficulty as string) : 'medium';
+    });
+    const [customTopic, setCustomTopic] = useState(() => searchParams.get('topic')?.slice(0, 200) ?? '');
     const [timer, setTimer] = useState(0);
     const [showCoach, setShowCoach] = useState(true);
     const [waveformData, setWaveformData] = useState<number[]>(Array.from({ length: 50 }, () => 0.1));
