@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { recordActivity } from '@/lib/progress';
 
 // ── Analytics helpers ──
 interface FeedbackData {
@@ -135,6 +136,14 @@ export async function POST(req: NextRequest) {
                 coachTips: body.coachTips || null,
             },
         });
+
+        // Advance the practice streak. A failure here must not lose the
+        // interview the user just completed, so it is logged and swallowed.
+        try {
+            await recordActivity(userId);
+        } catch (streakError) {
+            console.error('Failed to update streak:', streakError);
+        }
 
         return NextResponse.json(interview, { status: 201 });
     } catch (error) {
