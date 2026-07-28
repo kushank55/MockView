@@ -1,6 +1,23 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react';
+
+// Browser support never changes at runtime, so there is nothing to subscribe to.
+const noopSubscribe = () => () => { };
+
+type SpeechWindow = Window & {
+    SpeechRecognition?: unknown;
+    webkitSpeechRecognition?: unknown;
+};
+
+const getSpeechSupport = () => {
+    if (typeof window === 'undefined') return false;
+    const w = window as SpeechWindow;
+    return !!(w.SpeechRecognition || w.webkitSpeechRecognition);
+};
+
+// Rendered on the server and during hydration, where the API can't be probed.
+const getServerSpeechSupport = (): boolean | null => null;
 
 interface UseSpeechOptions {
     onSpeechResult: (text: string) => void;
@@ -10,6 +27,14 @@ interface UseSpeechOptions {
 export function useSpeech({ onSpeechResult, onSilence }: UseSpeechOptions) {
     const [isRecording, setIsRecording] = useState(false);
     const [isSpeaking, setIsSpeaking] = useState(false);
+    // null until hydration completes, so callers can tell "not checked yet"
+    // apart from "checked and genuinely unsupported".
+    const isSupported = useSyncExternalStore(
+        noopSubscribe,
+        getSpeechSupport,
+        getServerSpeechSupport
+    );
+    const [micDenied, setMicDenied] = useState(false);
     const recognitionRef = useRef<any>(null);
     const silenceTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -60,7 +85,8 @@ export function useSpeech({ onSpeechResult, onSilence }: UseSpeechOptions) {
 
                 recognition.onerror = (event: any) => {
                     console.error('Speech recognition error', event.error);
-                    if (event.error === 'not-allowed') {
+                    if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                        setMicDenied(true);
                         setIsRecording(false);
                     }
                 };
@@ -77,9 +103,9 @@ export function useSpeech({ onSpeechResult, onSilence }: UseSpeechOptions) {
                 };
 
                 recognitionRef.current = recognition;
-            } else {
-                console.warn('Speech Recognition API not supported in this browser.');
             }
+            // No else branch: Safari and Firefox have no Web Speech recognition,
+            // and isSupported already reports that to the UI.
         }
 
         return () => {
@@ -159,6 +185,8 @@ export function useSpeech({ onSpeechResult, onSilence }: UseSpeechOptions) {
     return {
         isRecording,
         isSpeaking,
+        isSupported,
+        micDenied,
         startRecording,
         stopRecording,
         speakText,

@@ -25,6 +25,7 @@ import {
     Upload,
     FileText,
     X,
+    Send,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -69,6 +70,7 @@ export default function InterviewPage() {
     const [showCoach, setShowCoach] = useState(true);
     const [waveformData, setWaveformData] = useState<number[]>(Array.from({ length: 50 }, () => 0.1));
     const [currentAnswer, setCurrentAnswer] = useState('');
+    const [typedAnswer, setTypedAnswer] = useState('');
 
     // Live coach state
     const [coachWpm, setCoachWpm] = useState(0);
@@ -157,6 +159,8 @@ export default function InterviewPage() {
     const {
         isRecording,
         isSpeaking,
+        isSupported: isSpeechSupported,
+        micDenied,
         startRecording,
         stopRecording,
         speakText,
@@ -223,6 +227,18 @@ export default function InterviewPage() {
 
     // Keep isSpeakingRef in sync
     useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
+
+    // Submits a typed answer — the fallback path for browsers without speech
+    // recognition, and an escape hatch when dictation mishears something.
+    const submitTypedAnswer = () => {
+        const answer = typedAnswer.trim();
+        if (!answer || isLoading) return;
+        append({ role: 'user', content: answer });
+        setTypedAnswer('');
+        // Clear any partial dictation so the answer isn't sent twice.
+        setCurrentAnswer('');
+        currentAnswerRef.current = '';
+    };
 
     // Auto-start recording functionality
     useEffect(() => {
@@ -473,6 +489,35 @@ export default function InterviewPage() {
                             )}
                         </div>
 
+                        {/* Voice input is Web Speech only — warn before the user
+                            starts an interview they can't actually speak in. */}
+                        {isSpeechSupported === false && (
+                            <div className={styles.browserWarning}>
+                                <AlertCircle size={16} />
+                                <div>
+                                    <strong>Voice input isn&apos;t available in this browser.</strong>
+                                    <p>
+                                        Speech recognition is only supported in Chrome, Edge, and other
+                                        Chromium browsers. You can still run the interview and type your
+                                        answers below the transcript.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
+                        {micDenied && (
+                            <div className={styles.browserWarning}>
+                                <AlertCircle size={16} />
+                                <div>
+                                    <strong>Microphone access is blocked.</strong>
+                                    <p>
+                                        Allow microphone access in your browser&apos;s site settings, then
+                                        reload this page to use voice answers.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         <Button
                             size="lg"
                             fullWidth
@@ -641,6 +686,37 @@ export default function InterviewPage() {
                                     <span /><span /><span />
                                 </div>
                             )}
+                        </div>
+
+                        {/* Typed answers: the only input path when speech
+                            recognition is unavailable, optional otherwise. */}
+                        <div className={styles.answerComposer}>
+                            <input
+                                className={styles.answerInput}
+                                placeholder={
+                                    isSpeechSupported === false
+                                        ? 'Type your answer and press Enter'
+                                        : 'Or type your answer...'
+                                }
+                                value={typedAnswer}
+                                onChange={(e) => setTypedAnswer(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        submitTypedAnswer();
+                                    }
+                                }}
+                                disabled={isLoading}
+                                aria-label="Type your answer"
+                            />
+                            <button
+                                className={styles.answerSendBtn}
+                                onClick={submitTypedAnswer}
+                                disabled={isLoading || !typedAnswer.trim()}
+                                aria-label="Send answer"
+                            >
+                                <Send size={16} />
+                            </button>
                         </div>
                     </Card>
 
