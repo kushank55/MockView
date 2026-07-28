@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSpeech } from '@/hooks/useSpeech';
 import { useCamera } from '@/hooks/useCamera';
@@ -62,7 +62,9 @@ export default function InterviewPage() {
 
 function InterviewSession() {
     const searchParams = useSearchParams();
+    const router = useRouter();
     const [isActive, setIsActive] = useState(false);
+    const [saveError, setSaveError] = useState('');
     const [isPaused, setIsPaused] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
     const {
@@ -796,6 +798,16 @@ function InterviewSession() {
                         </div>
                     </Card>
 
+                    {saveError && (
+                        <div className={styles.browserWarning}>
+                            <AlertCircle size={16} />
+                            <div>
+                                <strong>Interview not saved</strong>
+                                <p>{saveError}</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Controls */}
                     <div className={styles.controls}>
                         <button
@@ -830,6 +842,7 @@ function InterviewSession() {
                             disabled={isLoading}
                             onClick={async () => {
                                 setIsLoading(true);
+                                setSaveError('');
                                 try {
                                     // Stop recording and speech immediately
                                     setIsActive(false);
@@ -880,18 +893,22 @@ function InterviewSession() {
                                     });
 
                                     if (!res.ok) {
-                                        const errorData = await res.text();
-                                        alert("Failed to save the interview: " + errorData);
+                                        // Keep the session on screen so the transcript
+                                        // isn't lost, and let the user retry hanging up.
+                                        console.error('Failed to save interview:', await res.text());
+                                        setSaveError('We couldn\'t save this interview. Check your connection and try ending it again.');
+                                        setIsActive(true);
                                         setIsLoading(false);
                                         return;
                                     }
 
                                     // Redirect to the detailed results page with STAR builder
                                     const savedInterview = await res.json();
-                                    window.location.href = `/history/${savedInterview.id}`;
+                                    router.push(`/history/${savedInterview.id}`);
                                 } catch (err) {
                                     console.error('Failed to save interview', err);
-                                    setTimer(0);
+                                    setSaveError('We couldn\'t save this interview. Check your connection and try ending it again.');
+                                    setIsActive(true);
                                     setIsLoading(false);
                                 }
                             }}
