@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSpeech } from '@/hooks/useSpeech';
+import { useCamera } from '@/hooks/useCamera';
 import {
     Mic,
     MicOff,
@@ -52,7 +53,15 @@ export default function InterviewPage() {
     const [isActive, setIsActive] = useState(false);
     const [isPaused, setIsPaused] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
-    const [isVideoOn, setIsVideoOn] = useState(true);
+    const {
+        isVideoOn,
+        videoRef,
+        error: cameraError,
+        isRequesting: isCameraStarting,
+        isSupported: isCameraSupported,
+        stop: stopCamera,
+        toggle: toggleCamera,
+    } = useCamera();
     const [selectedType, setSelectedType] = useState('behavioral');
     const [selectedDifficulty, setSelectedDifficulty] = useState('medium');
     const [customTopic, setCustomTopic] = useState('');
@@ -525,6 +534,50 @@ export default function InterviewPage() {
                         </Card>
                     </motion.div>
 
+                    {/* Self-view camera — opt-in, practise reading your own body language */}
+                    <Card className={styles.selfViewCard}>
+                        <div className={styles.selfViewHeader}>
+                            <Video size={16} color="var(--accent-cyan)" />
+                            <span>Self View</span>
+                            {isVideoOn && <Badge variant="emerald" size="sm" dot>On</Badge>}
+                        </div>
+
+                        <div className={styles.selfViewFrame}>
+                            {isVideoOn ? (
+                                <video
+                                    ref={videoRef}
+                                    className={styles.selfViewVideo}
+                                    autoPlay
+                                    playsInline
+                                    muted
+                                />
+                            ) : (
+                                <div className={styles.selfViewPlaceholder}>
+                                    <VideoOff size={28} />
+                                    <span>
+                                        {isCameraStarting
+                                            ? 'Starting camera...'
+                                            : !isCameraSupported
+                                                ? 'Camera not supported in this browser'
+                                                : 'Camera is off'}
+                                    </span>
+                                    {isCameraSupported && !isCameraStarting && (
+                                        <button className={styles.selfViewEnableBtn} onClick={toggleCamera}>
+                                            Turn on camera
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {cameraError && (
+                            <div className={styles.selfViewError}>
+                                <AlertCircle size={13} />
+                                <span>{cameraError}</span>
+                            </div>
+                        )}
+                    </Card>
+
                     {/* Voice Waveform */}
                     <Card className={styles.waveformCard}>
                         <div className={styles.waveformHeader}>
@@ -601,7 +654,16 @@ export default function InterviewPage() {
                         </button>
                         <button
                             className={`${styles.controlBtn} ${!isVideoOn ? styles.muted : ''}`}
-                            onClick={() => setIsVideoOn(!isVideoOn)}
+                            onClick={toggleCamera}
+                            disabled={!isCameraSupported || isCameraStarting}
+                            title={
+                                !isCameraSupported
+                                    ? 'Camera is not supported in this browser'
+                                    : isVideoOn
+                                        ? 'Turn camera off'
+                                        : 'Turn camera on'
+                            }
+                            aria-label={isVideoOn ? 'Turn camera off' : 'Turn camera on'}
                         >
                             {isVideoOn ? <Video size={20} /> : <VideoOff size={20} />}
                         </button>
@@ -621,6 +683,7 @@ export default function InterviewPage() {
                                     setIsActive(false);
                                     stopSpeaking();
                                     stopRecording();
+                                    stopCamera();
 
                                     const currentMessages = messagesRef.current;
 
