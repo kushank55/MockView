@@ -119,6 +119,10 @@ model ResumeAnalysis {
   fileUrl     String?
   targetRole  String    @default("")
   atsScore    Int // 0-100
+
+  // Extracted PDF text, kept so an interview can be personalized from a
+  // previously analyzed resume without making the user upload it again.
+  resumeText String? @db.Text
   keywordData Json // Array of { keyword, count, relevance, found }
   sectionScores Json // Array of { label, score, icon }
   improvements  Json // Array of { severity, title, description }

@@ -144,6 +144,9 @@ export async function POST(req: NextRequest) {
                 keywordData: analysisData.keywordData,
                 sectionScores: analysisData.sectionScores,
                 improvements: analysisData.improvements,
+                // Stored so the interview flow can personalize questions from
+                // this resume without a second upload.
+                resumeText: resumeText.slice(0, 10000),
             } as any, // Cast to any to suppress IDE lag (Prisma client is synced, IDE just hasn't updated)
         });
 
