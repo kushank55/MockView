@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { resolveGoal } from '@/lib/goals';
 
 // GET /api/dashboard — Aggregated dashboard data
 export async function GET() {
@@ -161,12 +162,14 @@ export async function GET() {
             weeklyScores,
             scoreBreakdown,
             insights: insights.slice(0, 2), // Keep exactly 2 insights
-            goals: goals.map((g) => ({
-                label: g.label,
-                target: g.target,
-                current: g.current,
-                progress: Math.round((g.current / g.target) * 100),
-            })),
+            goals: goals.map((g) =>
+                resolveGoal(g, {
+                    totalInterviews,
+                    avgScore,
+                    currentStreak: streak?.currentStreak || 0,
+                    resumeScore: latestResume?.atsScore || 0,
+                })
+            ),
             streak: streak
                 ? {
                     current: streak.currentStreak,

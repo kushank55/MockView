@@ -132,11 +132,15 @@ model ResumeAnalysis {
 }
 
 model Goal {
-  id      String @id @default(cuid())
-  userId  String
-  label   String
-  target  Int
-  current Int    @default(0)
+  id     String @id @default(cuid())
+  userId String
+  label  String
+  target Int
+
+  // Which live statistic this goal tracks. Progress is derived from the user's
+  // real data on read, so goals stay accurate without a background job.
+  // "interviews" | "avgScore" | "streak" | "resumeScore"
+  metric String @default("interviews")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
