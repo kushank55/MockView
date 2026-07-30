@@ -4,6 +4,7 @@ import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { db } from './db';
 import { AUTH_ERRORS } from './auth-errors';
+import { ensureDemoUser } from './demo';
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(db) as NextAuthOptions['adapter'],
@@ -58,6 +59,29 @@ export const authOptions: NextAuthOptions = {
                     email: user.email,
                     image: user.image,
                 };
+            },
+        }),
+
+        // One-click demo sign-in. Takes no input and can only ever return the
+        // demo account, so there is no password to ship to the browser and no
+        // way to reach any other user through it.
+        CredentialsProvider({
+            id: 'demo',
+            name: 'Demo',
+            credentials: {},
+            async authorize() {
+                try {
+                    const user = await ensureDemoUser();
+                    return {
+                        id: user.id,
+                        name: user.name,
+                        email: user.email,
+                        image: user.image,
+                    };
+                } catch (error) {
+                    console.error('Demo sign-in failed:', error);
+                    throw new Error(AUTH_ERRORS.SERVICE_UNAVAILABLE);
+                }
             },
         }),
     ],
