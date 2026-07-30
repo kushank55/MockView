@@ -3,6 +3,7 @@ import CredentialsProvider from 'next-auth/providers/credentials';
 import { PrismaAdapter } from '@auth/prisma-adapter';
 import bcrypt from 'bcryptjs';
 import { db } from './db';
+import { AUTH_ERRORS } from './auth-errors';
 
 export const authOptions: NextAuthOptions = {
     adapter: PrismaAdapter(db) as NextAuthOptions['adapter'],
@@ -21,15 +22,25 @@ export const authOptions: NextAuthOptions = {
             },
             async authorize(credentials) {
                 if (!credentials?.email || !credentials?.password) {
-                    throw new Error('Email and password are required');
+                    throw new Error(AUTH_ERRORS.INVALID_CREDENTIALS);
                 }
 
-                const user = await db.user.findUnique({
-                    where: { email: credentials.email },
-                });
+                // NextAuth forwards whatever this function throws to the browser
+                // via the error query param, so infrastructure failures must be
+                // logged server-side and reported as an opaque code. Leaking the
+                // raw Prisma message would publish the database hostname.
+                let user;
+                try {
+                    user = await db.user.findUnique({
+                        where: { email: credentials.email },
+                    });
+                } catch (error) {
+                    console.error('Auth database lookup failed:', error);
+                    throw new Error(AUTH_ERRORS.SERVICE_UNAVAILABLE);
+                }
 
                 if (!user || !user.passwordHash) {
-                    throw new Error('Invalid email or password');
+                    throw new Error(AUTH_ERRORS.INVALID_CREDENTIALS);
                 }
 
                 const isValid = await bcrypt.compare(
@@ -38,7 +49,7 @@ export const authOptions: NextAuthOptions = {
                 );
 
                 if (!isValid) {
-                    throw new Error('Invalid email or password');
+                    throw new Error(AUTH_ERRORS.INVALID_CREDENTIALS);
                 }
 
                 return {
