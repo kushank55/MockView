@@ -162,6 +162,12 @@
     flex-wrap: wrap;
 }
 
+.heroDemo {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: var(--space-md);
+}
+
 /* Hero Visual — Interview Preview */
 .heroVisual {
     display: flex;

@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { AUTH_ERRORS } from '@/lib/auth-errors';
+import DemoLoginButton from '@/components/ui/DemoLoginButton';
 import Link from 'next/link';
 import {
     Sparkles,
@@ -136,6 +137,12 @@ export default function LoginPage() {
                         )}
                     </button>
                 </form>
+
+                {/* Lets reviewers explore a populated account without registering */}
+                <div className={styles.demoDivider}>
+                    <span>or</span>
+                </div>
+                <DemoLoginButton label="Try the demo account" />
 
                 <p className={styles.footer}>
                     Don&apos;t have an account?{' '}
