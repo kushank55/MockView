@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
-import { db } from '@/lib/db';
+import { db, isDatabaseUnreachable } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
     try {
@@ -52,6 +52,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(user, { status: 201 });
     } catch (error) {
         console.error('POST /api/auth/register error:', error);
+
+        // Distinguish "the database is down" from "the app is broken" so a
+        // paused or misconfigured database is obvious instead of a generic 500.
+        if (isDatabaseUnreachable(error)) {
+            return NextResponse.json(
+                { error: "We can't reach the server right now. Please try again in a moment." },
+                { status: 503 }
+            );
+        }
+
         return NextResponse.json(
             { error: 'Failed to create account' },
             { status: 500 }
