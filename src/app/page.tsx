@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import styles from './landing.module.css';
 import Button from '@/components/ui/Button';
+import DemoLoginButton from '@/components/ui/DemoLoginButton';
 
 const companyLogos = [
   {
@@ -244,6 +245,11 @@ export default function LandingPage() {
                 Analyze Resume
               </Button>
             </Link>
+          </div>
+
+          {/* Lets a visitor see the product with real history without signing up */}
+          <div className={styles.heroDemo}>
+            <DemoLoginButton variant="outline" label="Or try the demo — no signup" />
           </div>
         </motion.div>
 
