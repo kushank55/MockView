@@ -5,6 +5,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { AUTH_ERRORS } from '@/lib/auth-errors';
 import DemoLoginButton from '@/components/ui/DemoLoginButton';
+import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
 import Link from 'next/link';
 import {
     Sparkles,
@@ -25,6 +26,16 @@ export default function LoginPage() {
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
+    React.useEffect(() => {
+        const oauthError = new URLSearchParams(window.location.search).get('error');
+        if (!oauthError) return;
+        setError(
+            oauthError === 'OAuthAccountNotLinked'
+                ? 'This email already has an account. Sign in with email and password.'
+                : 'Google sign-in was cancelled or failed. Please try again.'
+        );
+    }, []);
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -42,7 +53,7 @@ export default function LoginPage() {
                 // which sent people off resetting a password that was fine.
                 setError(
                     res.error.includes(AUTH_ERRORS.SERVICE_UNAVAILABLE)
-                        ? "We can't reach the server right now. Please try again in a moment."
+                        ? 'Database not reached. Please try again in a moment.'
                         : 'Invalid email or password'
                 );
             } else {
@@ -85,6 +96,12 @@ export default function LoginPage() {
                         <span>{error}</span>
                     </div>
                 )}
+
+                <GoogleSignInButton />
+
+                <div className={styles.demoDivider}>
+                    <span>or continue with email</span>
+                </div>
 
                 <form onSubmit={handleSubmit} className={styles.form}>
                     <div className={styles.field}>

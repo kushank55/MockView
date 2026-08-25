@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
+import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
 import Link from 'next/link';
 import {
     Sparkles,
@@ -106,6 +107,12 @@ export default function SignupPage() {
                         <span>{error}</span>
                     </div>
                 )}
+
+                <GoogleSignInButton label="Sign up with Google" />
+
+                <div className={styles.demoDivider}>
+                    <span>or continue with email</span>
+                </div>
 
                 <form onSubmit={handleSubmit} className={styles.form}>
                     <div className={styles.field}>
