@@ -26,6 +26,8 @@ import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
+import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
+import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
 import styles from './settings.module.css';
 
 // ── Types ──
@@ -55,6 +57,7 @@ const settingsSections = [
 export default function SettingsPage() {
     const [activeSection, setActiveSection] = useState('profile');
     const [loading, setLoading] = useState(true);
+    const [dbUnreachable, setDbUnreachable] = useState(false);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
 
@@ -84,11 +87,15 @@ export default function SettingsPage() {
         autoRecord: true,
     });
 
-    // ── Fetch user profile on mount ──
-    useEffect(() => {
-        fetch('/api/user')
-            .then((res) => res.json())
-            .then((data) => {
+    const loadProfile = () => {
+        setDbUnreachable(false);
+        return fetch('/api/user')
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (isDatabaseUnreachableResponse(res, data)) {
+                    setDbUnreachable(true);
+                    return;
+                }
                 setProfile(data);
                 setFormData({
                     name: data.name || '',
@@ -104,12 +111,19 @@ export default function SettingsPage() {
                     weekly: data.notifyWeeklyReport ?? true,
                     achievements: data.notifyInterviewTip ?? true,
                 });
-                setLoading(false);
             })
             .catch((err) => {
                 console.error('Failed to load user settings:', err);
+                setDbUnreachable(true);
+            })
+            .finally(() => {
                 setLoading(false);
             });
+    };
+
+    // ── Fetch user profile on mount ──
+    useEffect(() => {
+        loadProfile();
     }, []);
 
     // ── Save profile changes ──
@@ -151,6 +165,15 @@ export default function SettingsPage() {
             .toUpperCase()
             .slice(0, 2)
         : 'U';
+
+    if (dbUnreachable) {
+        return (
+            <div className={styles.page}>
+                <Header title="Settings" subtitle="Database not reached" />
+                <DatabaseUnreachable onRetry={() => { setLoading(true); loadProfile(); }} />
+            </div>
+        );
+    }
 
     if (loading) {
         return (

@@ -27,6 +27,8 @@ import Card from '@/components/ui/Card';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import ProgressRing from '@/components/ui/ProgressRing';
+import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
+import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
 import styles from './dashboard.module.css';
 
 // ── Types for API response ──
@@ -106,6 +108,7 @@ export default function DashboardPage() {
     // ── State: data from API, loading flag ──
     const [data, setData] = useState<DashboardData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [dbUnreachable, setDbUnreachable] = useState(false);
 
     // ── Goal editor state ──
     const [isAddingGoal, setIsAddingGoal] = useState(false);
@@ -116,16 +119,24 @@ export default function DashboardPage() {
     const [savingGoal, setSavingGoal] = useState(false);
 
     const loadDashboard = React.useCallback(() => {
+        setDbUnreachable(false);
         return fetch('/api/dashboard')
-            .then((res) => res.json())
-            .then((apiData) => {
+            .then(async (res) => {
+                const apiData = await res.json().catch(() => ({}));
+                if (isDatabaseUnreachableResponse(res, apiData)) {
+                    setData(null);
+                    setDbUnreachable(true);
+                    return;
+                }
                 if (apiData && apiData.stats) {
                     setData(apiData);
                 }
-                setLoading(false);
             })
             .catch((err) => {
                 console.error('Failed to load dashboard:', err);
+                setDbUnreachable(true);
+            })
+            .finally(() => {
                 setLoading(false);
             });
     }, []);
@@ -202,15 +213,11 @@ export default function DashboardPage() {
     }
 
     // ── Error / no data state ──
-    if (!data) {
+    if (dbUnreachable || !data) {
         return (
             <div className={styles.page}>
-                <Header title="Dashboard" subtitle="Something went wrong" />
-                <Card>
-                    <p style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>
-                        Unable to load dashboard data. Please check your database connection.
-                    </p>
-                </Card>
+                <Header title="Dashboard" subtitle="Database not reached" />
+                <DatabaseUnreachable onRetry={() => { setLoading(true); loadDashboard(); }} />
             </div>
         );
     }

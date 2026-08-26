@@ -28,6 +28,8 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
+import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
+import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
 import styles from './playback.module.css';
 
 interface InterviewData {
@@ -111,16 +113,18 @@ export default function InterviewPlaybackPage() {
         if (!params.id) return;
 
         fetch(`/api/interviews/${params.id}`)
-            .then((res) => {
-                if (!res.ok) throw new Error('Interview not found');
-                return res.json();
-            })
-            .then((data) => {
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (isDatabaseUnreachableResponse(res, data)) {
+                    throw new Error('DATABASE_UNREACHABLE');
+                }
+                if (!res.ok) throw new Error(data.error || 'Interview not found');
                 setInterview(data);
-                setLoading(false);
             })
             .catch((err) => {
                 setError(err.message);
+            })
+            .finally(() => {
                 setLoading(false);
             });
     }, [params.id]);
@@ -201,6 +205,29 @@ export default function InterviewPlaybackPage() {
                     <div className={styles.loadingSpinner} />
                     <span>Loading interview data...</span>
                 </div>
+            </div>
+        );
+    }
+
+    if (error === 'DATABASE_UNREACHABLE') {
+        return (
+            <div className={styles.page}>
+                <Header title="Interview Review" subtitle="Database not reached" />
+                <DatabaseUnreachable onRetry={() => {
+                    setLoading(true);
+                    setError('');
+                    fetch(`/api/interviews/${params.id}`)
+                        .then(async (res) => {
+                            const data = await res.json().catch(() => ({}));
+                            if (isDatabaseUnreachableResponse(res, data)) {
+                                throw new Error('DATABASE_UNREACHABLE');
+                            }
+                            if (!res.ok) throw new Error(data.error || 'Interview not found');
+                            setInterview(data);
+                        })
+                        .catch((err) => setError(err.message))
+                        .finally(() => setLoading(false));
+                }} />
             </div>
         );
     }

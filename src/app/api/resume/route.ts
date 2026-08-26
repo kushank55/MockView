@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { databaseUnreachableResponse, db } from '@/lib/db';
 
 // GET /api/resume — Fetch resume analyses for a user
 export async function GET() {
@@ -20,7 +20,10 @@ export async function GET() {
         return NextResponse.json({ analyses });
     } catch (error) {
         console.error('GET /api/resume error:', error);
-        return NextResponse.json({ error: 'Failed to fetch resume analyses' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to fetch resume analyses' }, { status: 500 })
+        );
     }
 }
 

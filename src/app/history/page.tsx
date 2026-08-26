@@ -15,6 +15,8 @@ import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
+import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
+import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
 import { getScoreColor } from '@/lib/utils';
 import styles from './history.module.css';
 
@@ -74,33 +76,46 @@ export default function HistoryPage() {
     const [filter, setFilter] = useState('all');
     const [interviews, setInterviews] = useState<Interview[]>([]);
     const [loading, setLoading] = useState(true);
+    const [dbUnreachable, setDbUnreachable] = useState(false);
 
     // Real analytics from API
     const [radarSkills, setRadarSkills] = useState<RadarSkill[]>([]);
     const [heatmapData, setHeatmapData] = useState<HeatmapCategory[]>([]);
     const [scoreTrend, setScoreTrend] = useState<ScoreTrendPoint[]>([]);
 
-    // ── Fetch interviews + analytics from API ──
-    useEffect(() => {
+    const loadInterviews = React.useCallback(() => {
         const params = new URLSearchParams();
         if (filter !== 'all') params.set('type', filter);
 
-        fetch(`/api/interviews?${params.toString()}`)
-            .then((res) => res.json())
-            .then((data) => {
+        setDbUnreachable(false);
+        return fetch(`/api/interviews?${params.toString()}`)
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (isDatabaseUnreachableResponse(res, data)) {
+                    setDbUnreachable(true);
+                    setInterviews([]);
+                    return;
+                }
                 setInterviews(data.interviews || []);
                 if (data.analytics) {
                     setRadarSkills(data.analytics.radarSkills || []);
                     setHeatmapData(data.analytics.heatmapData || []);
                     setScoreTrend(data.analytics.scoreTrend || []);
                 }
-                setLoading(false);
             })
             .catch((err) => {
                 console.error('Failed to load interviews:', err);
+                setDbUnreachable(true);
+            })
+            .finally(() => {
                 setLoading(false);
             });
     }, [filter]);
+
+    // ── Fetch interviews + analytics from API ──
+    useEffect(() => {
+        loadInterviews();
+    }, [loadInterviews]);
 
     // ── Score Trend SVG helpers ──
     const trendWidth = 280;
@@ -144,6 +159,9 @@ export default function HistoryPage() {
         <div className={styles.page}>
             <Header title="Interview History" subtitle="Track your performance and growth over time" />
 
+            {dbUnreachable ? (
+                <DatabaseUnreachable onRetry={() => { setLoading(true); loadInterviews(); }} />
+            ) : (
             <div className={styles.mainGrid}>
                 {/* Left — Interview List */}
                 <div className={styles.leftCol}>
@@ -462,6 +480,7 @@ export default function HistoryPage() {
                     </motion.div>
                 </div>
             </div>
+            )}
         </div>
     );
 }

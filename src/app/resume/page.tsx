@@ -28,6 +28,8 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
+import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
+import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
 import styles from './resume.module.css';
 
 // ── Types ──
@@ -88,6 +90,7 @@ const severityConfig: Record<string, { icon: React.ElementType; color: string }>
 export default function ResumePage() {
     const [analysis, setAnalysis] = useState<ResumeAnalysis | null>(null);
     const [loading, setLoading] = useState(true);
+    const [dbUnreachable, setDbUnreachable] = useState(false);
 
     // Upload state
     const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -102,20 +105,31 @@ export default function ResumePage() {
     const fileInputRef = useRef<HTMLInputElement>(null);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
-    // ── Fetch existing analysis on mount ──
-    useEffect(() => {
-        fetch('/api/resume')
-            .then((res) => res.json())
-            .then((data) => {
+    const loadAnalyses = () => {
+        setDbUnreachable(false);
+        return fetch('/api/resume')
+            .then(async (res) => {
+                const data = await res.json().catch(() => ({}));
+                if (isDatabaseUnreachableResponse(res, data)) {
+                    setDbUnreachable(true);
+                    return;
+                }
                 if (data.analyses && data.analyses.length > 0) {
                     setAnalysis(data.analyses[0]);
                 }
-                setLoading(false);
             })
             .catch((err) => {
                 console.error('Failed to load resume analysis:', err);
+                setDbUnreachable(true);
+            })
+            .finally(() => {
                 setLoading(false);
             });
+    };
+
+    // ── Fetch existing analysis on mount ──
+    useEffect(() => {
+        loadAnalyses();
     }, []);
 
     // ── Close dropdown on outside click ──
@@ -231,6 +245,15 @@ export default function ResumePage() {
     };
 
     // ── Loading ──
+    if (dbUnreachable) {
+        return (
+            <div className={styles.page}>
+                <Header title="Resume Analysis" subtitle="Database not reached" />
+                <DatabaseUnreachable onRetry={() => { setLoading(true); loadAnalyses(); }} />
+            </div>
+        );
+    }
+
     if (loading) {
         return (
             <div className={styles.page}>

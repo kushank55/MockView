@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { databaseUnreachableResponse, db } from '@/lib/db';
 
 // GET /api/user — Get user profile
 export async function GET() {
@@ -38,7 +38,10 @@ export async function GET() {
         return NextResponse.json(user);
     } catch (error) {
         console.error('GET /api/user error:', error);
-        return NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to fetch user' }, { status: 500 })
+        );
     }
 }
 
@@ -97,6 +100,9 @@ export async function PATCH(req: NextRequest) {
         return NextResponse.json(user);
     } catch (error) {
         console.error('PATCH /api/user error:', error);
-        return NextResponse.json({ error: 'Failed to update user' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to update user' }, { status: 500 })
+        );
     }
 }

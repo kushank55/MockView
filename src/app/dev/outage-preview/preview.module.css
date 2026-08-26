@@ -1,0 +1,39 @@
+.page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-lg);
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-lg);
+}
+
+.label {
+    margin: 0 0 10px;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.oldEmpty {
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-tertiary);
+}
+
+.caption {
+    margin: 10px 0 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+    line-height: 1.5;
+}
+
+@media (max-width: 800px) {
+    .grid {
+        grid-template-columns: 1fr;
+    }
+}

@@ -34,13 +34,13 @@ export default function DemoLoginButton({
         try {
             const res = await signIn('demo', { redirect: false });
             if (res?.error) {
-                setError("The demo isn't available right now. Please try again shortly.");
+                setError('Database not reached. Please try again in a moment.');
                 return;
             }
             router.push('/dashboard');
             router.refresh();
         } catch {
-            setError("The demo isn't available right now. Please try again shortly.");
+            setError('Database not reached. Please try again in a moment.');
         } finally {
             setLoading(false);
         }

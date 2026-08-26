@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { databaseUnreachableResponse, db } from '@/lib/db';
 import { resolveGoal } from '@/lib/goals';
 
 // Maps a weak skill onto a concrete interview setup, so "practice this" lands
@@ -228,6 +228,9 @@ export async function GET() {
         });
     } catch (error) {
         console.error('GET /api/dashboard error:', error);
-        return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
+        );
     }
 }

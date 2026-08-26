@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { databaseUnreachableResponse, db } from '@/lib/db';
 import { GOAL_METRICS, type GoalMetric } from '@/lib/goals';
 
 const MAX_GOALS_PER_USER = 6;
@@ -26,7 +26,10 @@ export async function GET() {
         return NextResponse.json({ goals, metrics: GOAL_METRICS });
     } catch (error) {
         console.error('GET /api/goals error:', error);
-        return NextResponse.json({ error: 'Failed to fetch goals' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to fetch goals' }, { status: 500 })
+        );
     }
 }
 
@@ -69,7 +72,10 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(goal, { status: 201 });
     } catch (error) {
         console.error('POST /api/goals error:', error);
-        return NextResponse.json({ error: 'Failed to create goal' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to create goal' }, { status: 500 })
+        );
     }
 }
 
@@ -91,6 +97,9 @@ export async function DELETE(req: NextRequest) {
         return NextResponse.json({ success: true });
     } catch (error) {
         console.error('DELETE /api/goals error:', error);
-        return NextResponse.json({ error: 'Failed to delete goal' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to delete goal' }, { status: 500 })
+        );
     }
 }

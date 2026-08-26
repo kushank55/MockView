@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
-import { db } from '@/lib/db';
+import { databaseUnreachableResponse, db } from '@/lib/db';
 import { recordActivity } from '@/lib/progress';
 
 // ── Analytics helpers ──
@@ -108,7 +108,10 @@ export async function GET(req: NextRequest) {
         });
     } catch (error) {
         console.error('GET /api/interviews error:', error);
-        return NextResponse.json({ error: 'Failed to fetch interviews' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to fetch interviews' }, { status: 500 })
+        );
     }
 }
 
@@ -148,6 +151,9 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(interview, { status: 201 });
     } catch (error) {
         console.error('POST /api/interviews error:', error);
-        return NextResponse.json({ error: 'Failed to create interview' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            NextResponse.json({ error: 'Failed to create interview' }, { status: 500 })
+        );
     }
 }

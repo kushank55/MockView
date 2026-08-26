@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
         // paused or misconfigured database is obvious instead of a generic 500.
         if (isDatabaseUnreachable(error)) {
             return NextResponse.json(
-                { error: "We can't reach the server right now. Please try again in a moment." },
+                { error: 'Database not reached. Please try again in a moment.' },
                 { status: 503 }
             );
         }
