@@ -71,7 +71,7 @@ export async function POST(
 
         // Call Gemini for STAR rewrite
         const { text: aiResponse } = await generateText({
-            model: google('gemini-2.5-flash'),
+            model: google('gemini-3.5-flash-lite'),
             prompt: buildStarPrompt(question, answer, interviewType || 'general'),
         });
 

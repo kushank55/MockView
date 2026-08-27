@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useSpeech } from '@/hooks/useSpeech';
+import { takeCompleteUtterances, useSpeech } from '@/hooks/useSpeech';
 import { useCamera } from '@/hooks/useCamera';
+import { useMutedSpeechDetector } from '@/hooks/useMutedSpeechDetector';
 import {
     Mic,
     MicOff,
@@ -49,6 +50,10 @@ const difficultyLevels = [
 // Filler words to detect
 const FILLER_WORDS = ['um', 'uh', 'like', 'you know', 'basically', 'actually', 'so', 'well', 'right', 'i mean', 'kind of', 'sort of'];
 
+// How much talking into a muted mic is allowed before the candidate is warned.
+// Short enough to catch the start of an answer, long enough to ignore a cough.
+const MUTED_SPEECH_ALERT_MS = 700;
+
 // Hardcoded static references removed, driven by useChat state.
 
 // useSearchParams requires a Suspense boundary during prerendering.
@@ -67,6 +72,7 @@ function InterviewSession() {
     const [saveError, setSaveError] = useState('');
     const [isPaused, setIsPaused] = useState(false);
     const [isMuted, setIsMuted] = useState(false);
+    const [showMutedAlert, setShowMutedAlert] = useState(false);
     const {
         isVideoOn,
         videoRef,
@@ -91,6 +97,7 @@ function InterviewSession() {
     const [showCoach, setShowCoach] = useState(true);
     const [waveformData, setWaveformData] = useState<number[]>(Array.from({ length: 50 }, () => 0.1));
     const [currentAnswer, setCurrentAnswer] = useState('');
+    const [interimAnswer, setInterimAnswer] = useState('');
     const [typedAnswer, setTypedAnswer] = useState('');
 
     // Live coach state
@@ -105,6 +112,7 @@ function InterviewSession() {
 
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [isLoading, setIsLoading] = useState(false);
+    const [aiError, setAiError] = useState('');
 
     // Resume upload state
     const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -127,64 +135,22 @@ function InterviewSession() {
     const messagesRef = useRef(messages);
     const isLoadingRef = useRef(isLoading);
     const isSpeakingRef = useRef(false);
+    const isActiveRef = useRef(false);
+    const isPausedRef = useRef(false);
+    const isMutedRef = useRef(false);
+    const inFlightRef = useRef(false);
+    const generateAbortRef = useRef<AbortController | null>(null);
     const transcriptRef = useRef<HTMLDivElement>(null);
+    const appendRef = useRef<(msg: { role: 'user'; content: string }) => Promise<void>>(
+        async () => {}
+    );
 
     useEffect(() => { currentAnswerRef.current = currentAnswer; }, [currentAnswer]);
     useEffect(() => { messagesRef.current = messages; }, [messages]);
     useEffect(() => { isLoadingRef.current = isLoading; }, [isLoading]);
-
-    const append = async (newUserMessage: { role: 'user', content: string }) => {
-        const updatedMessages = [...messagesRef.current, newUserMessage];
-        setMessages(updatedMessages);
-        messagesRef.current = updatedMessages;
-        setIsLoading(true);
-
-        try {
-            const res = await fetch('/api/interview/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    messages: updatedMessages,
-                    topic: selectedType,
-                    resumeText: resumeTextRef.current || undefined,
-                    difficulty: selectedDifficulty,
-                    customTopic: customTopic || undefined,
-                }),
-            });
-
-            if (!res.ok || !res.body) throw new Error('Network response was not ok');
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let aiText = '';
-
-            // Add an empty assistant message
-            setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const chunk = decoder.decode(value, { stream: true });
-                aiText += chunk;
-
-                // Update the last message
-                setMessages(prev => {
-                    const newMsgs = [...prev];
-                    newMsgs[newMsgs.length - 1].content = aiText;
-                    return newMsgs;
-                });
-            }
-
-            setIsLoading(false);
-
-            if (isActive && !isPaused && !isMuted) {
-                speakText(aiText);
-            }
-        } catch (error) {
-            console.error('Failed to fetch AI response:', error);
-            setIsLoading(false);
-        }
-    };
+    useEffect(() => { isActiveRef.current = isActive; }, [isActive]);
+    useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+    useEffect(() => { isMutedRef.current = isMuted; }, [isMuted]);
 
     const {
         isRecording,
@@ -195,9 +161,11 @@ function InterviewSession() {
         stopRecording,
         speakText,
         stopSpeaking,
+        primeSpeech,
     } = useSpeech({
         onSpeechResult: (text) => {
-            if (!isPaused && !isMuted) {
+            if (!isPausedRef.current && !isMutedRef.current && !isSpeakingRef.current && !isLoadingRef.current) {
+                setInterimAnswer('');
                 setCurrentAnswer((prev) => {
                     const updated = prev ? prev + " " + text : text;
                     currentAnswerRef.current = updated;
@@ -243,20 +211,163 @@ function InterviewSession() {
                 setCoachTips(tips);
             }
         },
+        onInterimResult: (text) => {
+            if (!isPausedRef.current && !isMutedRef.current && !isSpeakingRef.current && !isLoadingRef.current) {
+                setInterimAnswer(text);
+            }
+        },
         onSilence: () => {
             // Guard: don't fire while AI is loading/speaking, or if answer is empty
-            if (isLoadingRef.current || isSpeakingRef.current) return;
+            if (isLoadingRef.current || isSpeakingRef.current || inFlightRef.current) return;
+            if (isPausedRef.current || isMutedRef.current) return;
             const answer = currentAnswerRef.current.trim();
             if (answer !== '') {
-                append({ role: 'user', content: answer });
+                setInterimAnswer('');
                 setCurrentAnswer('');
                 currentAnswerRef.current = '';
+                void appendRef.current({ role: 'user', content: answer });
             }
         }
     });
 
+    const releaseSpokenText = (spokenSoFar: string, pieces: string[]) => {
+        let next = spokenSoFar;
+        for (const piece of pieces) {
+            next = next ? `${next} ${piece}` : piece;
+            if (isActiveRef.current && !isPausedRef.current && !isMutedRef.current) {
+                speakText(piece);
+            }
+        }
+        const released = next;
+        setMessages((prev) => {
+            const newMsgs = [...prev];
+            const last = newMsgs[newMsgs.length - 1];
+            if (last?.role === 'assistant') {
+                newMsgs[newMsgs.length - 1] = { ...last, content: released };
+            }
+            messagesRef.current = newMsgs;
+            return newMsgs;
+        });
+        return released;
+    };
+
+    const requestAiReply = async () => {
+        if (inFlightRef.current) return;
+        inFlightRef.current = true;
+        stopRecording();
+        setAiError('');
+        setIsLoading(true);
+
+        try {
+            generateAbortRef.current?.abort();
+            const controller = new AbortController();
+            generateAbortRef.current = controller;
+            const timeout = setTimeout(() => controller.abort(), 25_000);
+
+            const res = await fetch('/api/interview/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: messagesRef.current,
+                    topic: selectedType,
+                    resumeText: resumeTextRef.current || undefined,
+                    difficulty: selectedDifficulty,
+                    customTopic: customTopic || undefined,
+                }),
+                signal: controller.signal,
+            });
+            clearTimeout(timeout);
+
+            if (!isActiveRef.current) return;
+
+            const data = await res.json().catch(() => ({}));
+            const text = typeof data.text === 'string' ? data.text.trim() : '';
+            if (!res.ok || !text) {
+                throw new Error(
+                    data.error ||
+                    (res.status === 429
+                        ? 'The interviewer is rate-limited right now. Wait about a minute, then retry.'
+                        : 'Could not reach the interviewer. Please retry.')
+                );
+            }
+
+            if (!isActiveRef.current) return;
+
+            setMessages((prev) => {
+                const withoutEmpty = prev.filter((m, i) => !(i === prev.length - 1 && m.role === 'assistant' && !m.content.trim()));
+                const next = [...withoutEmpty, { role: 'assistant', content: '' }];
+                messagesRef.current = next;
+                return next;
+            });
+
+            const { ready, rest } = takeCompleteUtterances(text);
+            const leftover = rest.trim();
+            const pieces = [...ready, ...(leftover ? [leftover] : [])];
+            if (isActiveRef.current) {
+                releaseSpokenText('', pieces.length ? pieces : [text]);
+            }
+        } catch (error) {
+            if (!isActiveRef.current) return;
+            console.error('Failed to fetch AI response:', error);
+            const aborted = error instanceof DOMException && error.name === 'AbortError';
+            setAiError(
+                aborted
+                    ? 'The interviewer took too long to respond. Please retry.'
+                    : error instanceof Error
+                        ? error.message
+                        : 'Could not reach the interviewer. Please retry.'
+            );
+            setMessages((prev) => {
+                const next = prev.filter((m, i) => !(i === prev.length - 1 && m.role === 'assistant' && !m.content.trim()));
+                messagesRef.current = next;
+                return next;
+            });
+        } finally {
+            if (isActiveRef.current) {
+                setIsLoading(false);
+            }
+            inFlightRef.current = false;
+        }
+    };
+
+    const append = async (newUserMessage: { role: 'user'; content: string }) => {
+        if (inFlightRef.current) return;
+        const updatedMessages = [...messagesRef.current, newUserMessage];
+        setMessages(updatedMessages);
+        messagesRef.current = updatedMessages;
+        await requestAiReply();
+    };
+    appendRef.current = append;
+
     // Keep isSpeakingRef in sync
     useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
+
+    // Watch for the candidate talking during THEIR turn while the mute button
+    // is on. Auto-stop during AI speech is separate (echo prevention).
+    const isUserTurn =
+        isActive && !isPaused && !isSpeaking && !isLoading && !aiError;
+    const isWatchingForMutedSpeech = isUserTurn && isMuted && isSpeechSupported !== false && !micDenied;
+
+    const turnMicOn = useCallback(() => {
+        setShowMutedAlert(false);
+        isMutedRef.current = false;
+        setIsMuted(false);
+    }, []);
+
+    const handleSpeechWhileMuted = useCallback(() => {
+        setShowMutedAlert(true);
+    }, []);
+
+    useMutedSpeechDetector({
+        enabled: isWatchingForMutedSpeech,
+        speakingMs: MUTED_SPEECH_ALERT_MS,
+        onSpeechWhileMuted: handleSpeechWhileMuted,
+    });
+
+    // The warning is only meaningful while muted, so unmuting clears it.
+    useEffect(() => {
+        if (!isMuted) setShowMutedAlert(false);
+    }, [isMuted]);
 
     // Offer the most recently analyzed resume so the user doesn't have to
     // upload the same PDF they already ran through the resume analyzer.
@@ -287,48 +398,114 @@ function InterviewSession() {
         setResumeText('');
         setResumeError('');
         setUsingSavedResume(false);
+        setIsParsingResume(false);
         resumeTextRef.current = '';
+    };
+
+    const parseUploadedResume = async (file: File) => {
+        setResumeFile(file);
+        setUsingSavedResume(false);
+        setResumeError('');
+        setIsParsingResume(true);
+        setResumeText('');
+        resumeTextRef.current = '';
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25_000);
+
+        try {
+            const formData = new FormData();
+            formData.append('resume', file);
+            const res = await fetch('/api/interview/parse-resume', {
+                method: 'POST',
+                body: formData,
+                signal: controller.signal,
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                throw new Error(data.error || 'Failed to parse resume');
+            }
+            if (!data.text || String(data.text).trim().length < 30) {
+                throw new Error('Could not extract enough text from the PDF.');
+            }
+            setResumeText(data.text);
+            resumeTextRef.current = data.text;
+        } catch (err: unknown) {
+            const aborted = err instanceof DOMException && err.name === 'AbortError';
+            setResumeError(
+                aborted
+                    ? 'Parsing timed out. Please try a text-based PDF.'
+                    : err instanceof Error
+                        ? err.message
+                        : 'Failed to parse resume'
+            );
+            setResumeFile(null);
+            setResumeText('');
+            resumeTextRef.current = '';
+        } finally {
+            clearTimeout(timeout);
+            setIsParsingResume(false);
+        }
     };
 
     // Submits a typed answer — the fallback path for browsers without speech
     // recognition, and an escape hatch when dictation mishears something.
     const submitTypedAnswer = () => {
         const answer = typedAnswer.trim();
-        if (!answer || isLoading) return;
+        if (!answer || isLoading || isSpeaking || inFlightRef.current) return;
+        setInterimAnswer('');
         append({ role: 'user', content: answer });
         setTypedAnswer('');
-        // Clear any partial dictation so the answer isn't sent twice.
         setCurrentAnswer('');
         currentAnswerRef.current = '';
     };
 
-    // Auto-start recording functionality
+    // Only listen while it is the candidate's turn. Mic off during thinking
+    // and while the interviewer is talking — otherwise the speakers get
+    // transcribed as the user's answer.
     useEffect(() => {
-        if (isActive && !isPaused && !isMuted && !isSpeaking) {
+        if (isActive && !isPaused && !isMuted && !isSpeaking && !isLoading && !aiError) {
             startRecording();
         } else {
             stopRecording();
         }
-    }, [isActive, isPaused, isMuted, isSpeaking, startRecording, stopRecording]);
+    }, [isActive, isPaused, isMuted, isSpeaking, isLoading, aiError, startRecording, stopRecording]);
 
     // Derived states
-    const aiMessages = messages.filter((m: any) => m.role === 'assistant');
+    const aiMessages = messages.filter((m: any) => m.role === 'assistant' && String(m.content).trim());
     const questionNumber = Math.max(1, aiMessages.length);
-    const latestQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].content : 'Waiting for AI to ask the first question...';
+    const latestQuestion = aiMessages.length > 0 ? aiMessages[aiMessages.length - 1].content : '';
+    const questionDisplay = latestQuestion.trim()
+        ? latestQuestion
+        : isLoading
+            ? 'The interviewer is thinking...'
+            : aiError
+                ? aiError
+                : 'Waiting for the interviewer...';
+    const turnLabel = isSpeaking
+        ? 'AI speaking'
+        : isLoading
+            ? 'Thinking'
+            : aiError
+                ? 'Retry needed'
+            : isMuted
+                ? 'Mic off'
+                : isRecording
+                    ? 'Your turn — we\'re listening'
+                    : isPaused
+                        ? 'Paused'
+                        : 'Waiting';
     const transcriptMessages = messages.map((m: any) => ({
         role: m.role === 'assistant' ? 'ai' : 'user',
         text: m.content
     }));
-    if (currentAnswer.trim() !== '') {
-        transcriptMessages.push({ role: 'user', text: currentAnswer });
-    }
 
     // Auto-scroll transcript to the bottom on new messages
     useEffect(() => {
         if (transcriptRef.current) {
             transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
         }
-    }, [messages, currentAnswer]);
+    }, [messages, currentAnswer, interimAnswer]);
 
     // Timer with warning and auto-end
     useEffect(() => {
@@ -449,37 +626,13 @@ function InterviewSession() {
                                 <label className={styles.uploadZone}>
                                     <input
                                         type="file"
-                                        accept=".pdf"
+                                        accept=".pdf,application/pdf"
                                         className={styles.fileInput}
                                         onChange={async (e) => {
                                             const file = e.target.files?.[0];
+                                            e.target.value = '';
                                             if (!file) return;
-                                            setResumeFile(file);
-                                            setResumeError('');
-                                            setIsParsingResume(true);
-
-                                            try {
-                                                const formData = new FormData();
-                                                formData.append('resume', file);
-                                                const res = await fetch('/api/interview/parse-resume', {
-                                                    method: 'POST',
-                                                    body: formData,
-                                                });
-                                                if (!res.ok) {
-                                                    const err = await res.json();
-                                                    throw new Error(err.error || 'Failed to parse resume');
-                                                }
-                                                const data = await res.json();
-                                                setResumeText(data.text);
-                                                resumeTextRef.current = data.text;
-                                            } catch (err: any) {
-                                                setResumeError(err.message || 'Failed to parse resume');
-                                                setResumeFile(null);
-                                                setResumeText('');
-                                                resumeTextRef.current = '';
-                                            } finally {
-                                                setIsParsingResume(false);
-                                            }
+                                            await parseUploadedResume(file);
                                         }}
                                     />
                                     <Upload size={24} className={styles.uploadIcon} />
@@ -602,11 +755,13 @@ function InterviewSession() {
                             icon={<Mic size={18} />}
                             disabled={isParsingResume}
                             onClick={() => {
+                                primeSpeech();
+                                isActiveRef.current = true;
                                 setIsActive(true);
                                 let msg = `Hi, I'm ready to begin the ${selectedType} interview.`;
                                 if (customTopic) msg += ` The topic I want to focus on is: ${customTopic}.`;
                                 if (resumeText) msg += ` I've uploaded my resume for your reference.`;
-                                append({ role: 'user', content: msg });
+                                void append({ role: 'user', content: msg });
                             }}
                         >
                             {isParsingResume ? 'Parsing Resume...' : 'Begin Interview'}
@@ -650,10 +805,22 @@ function InterviewSession() {
                         <Card className={styles.questionCard}>
                             <div className={styles.questionLabel}>
                                 <Brain size={16} /> AI Interviewer
+                                <span className={styles.turnStatus}>{turnLabel}</span>
                             </div>
                             <p className={styles.questionText}>
-                                {latestQuestion}
+                                {questionDisplay}
                             </p>
+                            {aiError && !isLoading && (
+                                <button
+                                    className={styles.retryAiBtn}
+                                    onClick={() => { void requestAiReply(); }}
+                                >
+                                    Retry question
+                                </button>
+                            )}
+                            {isRecording && !isSpeaking && !isLoading && !aiError && (
+                                <p className={styles.turnHint}>Speak naturally. Pause when you&apos;re done and the interviewer will continue.</p>
+                            )}
                         </Card>
                     </motion.div>
 
@@ -705,11 +872,11 @@ function InterviewSession() {
                     <Card className={styles.waveformCard}>
                         <div className={styles.waveformHeader}>
                             <Volume2 size={16} color="var(--accent-blue)" />
-                            <span>{isSpeaking ? 'AI Speaking' : 'Your Voice'}</span>
+                            <span>{isSpeaking ? 'AI Speaking' : isLoading ? 'Thinking' : isMuted ? 'Microphone off' : 'Your Voice'}</span>
                             {!isPaused && (
                                 <span className={styles.recording}>
-                                    <span className={styles.recordDot} style={{ background: isSpeaking ? 'var(--accent-purple)' : undefined }} />
-                                    {isSpeaking ? 'Listening' : (isRecording ? 'Recording' : 'Waiting')}
+                                    <span className={styles.recordDot} style={{ background: isSpeaking ? 'var(--accent-purple)' : isLoading ? 'var(--accent-amber)' : isMuted ? 'var(--accent-rose)' : undefined }} />
+                                    {isSpeaking ? 'Speaking' : isLoading ? 'Thinking' : isMuted ? 'Muted' : (isRecording ? 'Listening' : 'Waiting')}
                                 </span>
                             )}
                         </div>
@@ -755,7 +922,13 @@ function InterviewSession() {
                             {currentAnswer && (
                                 <div className={`${styles.transcriptMsg} ${styles.user}`} style={{ opacity: 0.7 }}>
                                     <span className={styles.msgRole}>You</span>
-                                    <p className={styles.msgText}>{currentAnswer}</p>
+                                    <p className={styles.msgText}>{currentAnswer}{interimAnswer ? ` ${interimAnswer}` : ''}</p>
+                                </div>
+                            )}
+                            {!currentAnswer && interimAnswer && (
+                                <div className={`${styles.transcriptMsg} ${styles.user}`} style={{ opacity: 0.7 }}>
+                                    <span className={styles.msgRole}>You</span>
+                                    <p className={styles.msgText}>{interimAnswer}</p>
                                 </div>
                             )}
 
@@ -784,13 +957,13 @@ function InterviewSession() {
                                         submitTypedAnswer();
                                     }
                                 }}
-                                disabled={isLoading}
+                                disabled={isLoading || isSpeaking}
                                 aria-label="Type your answer"
                             />
                             <button
                                 className={styles.answerSendBtn}
                                 onClick={submitTypedAnswer}
-                                disabled={isLoading || !typedAnswer.trim()}
+                                disabled={isLoading || isSpeaking || !typedAnswer.trim()}
                                 aria-label="Send answer"
                             >
                                 <Send size={16} />
@@ -808,11 +981,54 @@ function InterviewSession() {
                         </div>
                     )}
 
+                    {/* Talking on your turn while the mute button is on */}
+                    <AnimatePresence>
+                        {showMutedAlert && isMuted && (
+                            <motion.div
+                                className={styles.mutedOverlay}
+                                role="alertdialog"
+                                aria-modal="true"
+                                aria-labelledby="muted-alert-title"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                exit={{ opacity: 0 }}
+                            >
+                                <motion.div
+                                    className={styles.mutedDialog}
+                                    initial={{ opacity: 0, scale: 0.96, y: 8 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.96, y: 8 }}
+                                >
+                                    <div className={styles.mutedDialogIcon}>
+                                        <MicOff size={28} />
+                                    </div>
+                                    <h3 id="muted-alert-title" className={styles.mutedDialogTitle}>
+                                        Your microphone is off
+                                    </h3>
+                                    <p className={styles.mutedDialogBody}>
+                                        It&apos;s your turn and we can tell you&apos;re speaking, but the interviewer can&apos;t hear you. Turn the mic on to start your answer.
+                                    </p>
+                                    <button
+                                        className={styles.mutedDialogAction}
+                                        onClick={turnMicOn}
+                                    >
+                                        Turn on mic and start answering
+                                    </button>
+                                </motion.div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+
                     {/* Controls */}
                     <div className={styles.controls}>
                         <button
                             className={`${styles.controlBtn} ${isMuted ? styles.muted : ''}`}
-                            onClick={() => setIsMuted(!isMuted)}
+                            onClick={() => {
+                                if (isMuted) turnMicOn();
+                                else setIsMuted(true);
+                            }}
+                            title={isMuted ? 'Turn on microphone' : 'Mute microphone'}
+                            aria-label={isMuted ? 'Turn on microphone' : 'Mute microphone'}
                         >
                             {isMuted ? <MicOff size={20} /> : <Mic size={20} />}
                         </button>
@@ -833,23 +1049,25 @@ function InterviewSession() {
                         </button>
                         <button
                             className={`${styles.controlBtn} ${styles.pauseBtn}`}
-                            onClick={() => setIsPaused(!isPaused)}
+                            onClick={() => {
+                                if (!isPaused) stopSpeaking();
+                                setIsPaused(!isPaused);
+                            }}
                         >
                             {isPaused ? <Play size={20} /> : <Pause size={20} />}
                         </button>
                         <button
                             className={`${styles.controlBtn} ${styles.endBtn}`}
-                            disabled={isLoading}
                             onClick={async () => {
+                                isActiveRef.current = false;
+                                generateAbortRef.current?.abort();
+                                stopSpeaking(true);
+                                stopRecording();
+                                stopCamera();
+                                setIsActive(false);
                                 setIsLoading(true);
                                 setSaveError('');
                                 try {
-                                    // Stop recording and speech immediately
-                                    setIsActive(false);
-                                    stopSpeaking();
-                                    stopRecording();
-                                    stopCamera();
-
                                     const currentMessages = messagesRef.current;
 
                                     // Step 1: Call AI evaluation endpoint
@@ -897,6 +1115,8 @@ function InterviewSession() {
                                         // isn't lost, and let the user retry hanging up.
                                         console.error('Failed to save interview:', await res.text());
                                         setSaveError('We couldn\'t save this interview. Check your connection and try ending it again.');
+                                        isActiveRef.current = true;
+                                        stopSpeaking(false);
                                         setIsActive(true);
                                         setIsLoading(false);
                                         return;
@@ -908,6 +1128,8 @@ function InterviewSession() {
                                 } catch (err) {
                                     console.error('Failed to save interview', err);
                                     setSaveError('We couldn\'t save this interview. Check your connection and try ending it again.');
+                                    isActiveRef.current = true;
+                                    stopSpeaking(false);
                                     setIsActive(true);
                                     setIsLoading(false);
                                 }

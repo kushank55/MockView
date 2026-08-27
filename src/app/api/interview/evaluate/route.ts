@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
 
         // Call Gemini for evaluation
         const { text: aiResponse } = await generateText({
-            model: google('gemini-2.5-flash'),
+            model: google('gemini-3.5-flash-lite'),
             prompt: buildEvaluationPrompt(transcript, type || 'general'),
         });
 

@@ -1,12 +1,12 @@
 import { google } from '@ai-sdk/google';
-import { streamText } from 'ai';
+import { generateText } from 'ai';
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { INTERVIEW_MODELS } from '@/lib/gemini';
 
-// Node.js runtime is required for NextAuth and Prisma
+export const maxDuration = 30;
 
-// Difficulty-specific prompting
 const difficultyPrompts: Record<string, string> = {
     easy: `
 You are a friendly, encouraging interviewer. 
@@ -27,7 +27,6 @@ You are a rigorous, senior-level interviewer at a top tech company.
 - Don't accept surface-level answers — push for depth.`,
 };
 
-// System prompt for the persona of the AI interviewer
 const generateSystemPrompt = (topic: string, name: string, difficulty: string, customTopic?: string, resumeText?: string) => {
     const roleContext = customTopic
         ? `'${customTopic}'`
@@ -41,11 +40,12 @@ ${difficultyPrompts[difficulty] || difficultyPrompts.medium}
 
 Core Rules:
 1. Ask exactly ONE question at a time.
-2. Keep your responses concise and conversational (maximum 2-3 sentences).
-3. Do not break character. Do not use markdown that can't easily be read aloud.
-4. Listen to the candidate's answer, provide 1 brief constructive remark (praising or pointing out a slight improvement), and then ask the NEXT question.
-5. If the candidate asks you a question, answer it briefly, but steer the conversation back to the interview.
-6. The interview must feel like a natural voice conversation.
+2. Speak like a real interviewer on a call: short, natural sentences that can be read aloud.
+3. Maximum 2 sentences per turn. No markdown, no bullet lists, no stage directions.
+4. After the candidate answers: one brief spoken reaction, then the next question. Never recap their whole answer.
+5. If they ask you something, answer in one sentence and return to the interview.
+6. Do not dump multiple questions. Wait for their reply, then continue.
+7. The first turn is a one-sentence greeting plus the first question.
 `;
 
     if (resumeText) {
@@ -67,6 +67,11 @@ ${resumeText}
     return basePrompt;
 };
 
+function isQuotaError(error: unknown): boolean {
+    const text = error instanceof Error ? error.message : String(error ?? '');
+    return /quota|rate-limit|429|RESOURCE_EXHAUSTED/i.test(text);
+}
+
 export async function POST(req: Request) {
     try {
         const session = await getServerSession(authOptions);
@@ -80,25 +85,51 @@ export async function POST(req: Request) {
             return NextResponse.json({ error: 'Missing required parameters' }, { status: 400 });
         }
 
-        // Call the Google Gemini model via Vercel AI SDK
-        const result = streamText({
-            model: google('gemini-2.5-flash'),
-            system: generateSystemPrompt(
-                topic,
-                session.user.name || 'Candidate',
-                difficulty || 'medium',
-                customTopic,
-                resumeText
-            ),
-            messages: messages as any[],
-        });
+        const system = generateSystemPrompt(
+            topic,
+            session.user.name || 'Candidate',
+            difficulty || 'medium',
+            customTopic,
+            resumeText
+        );
 
-        return result.toTextStreamResponse();
-    } catch (error: any) {
-        console.error('AI SDK Error:', error);
+        let lastError: unknown;
+        for (const modelId of INTERVIEW_MODELS) {
+            try {
+                const { text } = await generateText({
+                    model: google(modelId),
+                    system,
+                    messages,
+                    maxRetries: 0,
+                });
+                if (text?.trim()) {
+                    return NextResponse.json({ text: text.trim() });
+                }
+            } catch (error) {
+                lastError = error;
+                console.error(`Interview generate failed (${modelId}):`, error);
+            }
+        }
+
+        const quota = isQuotaError(lastError);
         return NextResponse.json(
-            { error: error.message || 'An error occurred during interview generation' },
-            { status: 500 }
+            {
+                error: quota
+                    ? 'The interviewer is rate-limited right now. Wait about a minute, then retry.'
+                    : 'Could not reach the interviewer. Please retry.',
+            },
+            { status: quota ? 429 : 502 }
+        );
+    } catch (error: unknown) {
+        console.error('AI SDK Error:', error);
+        const quota = isQuotaError(error);
+        return NextResponse.json(
+            {
+                error: quota
+                    ? 'The interviewer is rate-limited right now. Wait about a minute, then retry.'
+                    : 'Could not reach the interviewer. Please retry.',
+            },
+            { status: quota ? 429 : 500 }
         );
     }
 }

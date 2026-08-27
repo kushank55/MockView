@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { db } from '@/lib/db';
+import { extractPdfText } from '@/lib/pdf-text';
 
 // ── System prompt for resume ATS analysis ──
 function buildPrompt(resumeText: string, targetRole: string): string {
@@ -69,21 +70,11 @@ export async function POST(req: NextRequest) {
 
         let resumeText: string;
         try {
-            const PDFParser = (await import('pdf2json')).default;
-            resumeText = await new Promise((resolve, reject) => {
-                const pdfParser = new PDFParser(null, true); // true = extract text only
-
-                pdfParser.on("pdfParser_dataError", (errData: any) => reject(errData.parserError));
-                pdfParser.on("pdfParser_dataReady", () => {
-                    resolve(pdfParser.getRawTextContent());
-                });
-
-                pdfParser.parseBuffer(buffer);
-            });
+            resumeText = await extractPdfText(buffer);
         } catch (parseErr) {
             console.error('PDF parse error:', parseErr);
             return NextResponse.json(
-                { error: 'Failed to parse PDF. Please ensure the file is a valid PDF.' },
+                { error: 'Failed to parse PDF. Please ensure the file is a valid text-based PDF.' },
                 { status: 400 }
             );
         }
@@ -97,7 +88,7 @@ export async function POST(req: NextRequest) {
 
         // ── Call Gemini for ATS analysis ──
         const { text: aiResponse } = await generateText({
-            model: google('gemini-2.5-flash'),
+            model: google('gemini-3.5-flash-lite'),
             prompt: buildPrompt(resumeText.slice(0, 15000), targetRole), // Cap at 15k chars
         });
 
