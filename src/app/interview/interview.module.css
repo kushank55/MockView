@@ -927,6 +927,8 @@
 .coachCard {
     position: sticky;
     top: var(--space-lg);
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
 }
 
 .coachHeader {
@@ -1010,6 +1012,91 @@
     padding: var(--space-sm);
     border-radius: var(--radius-sm);
     background: var(--bg-glass);
+}
+
+/* Ask the interviewer */
+.suggestSection {
+    margin-bottom: var(--space-lg);
+    padding-bottom: var(--space-lg);
+    border-bottom: 1px solid var(--border-subtle);
+}
+
+.suggestSection .tipsLabel {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.suggestHint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+    line-height: 1.4;
+    margin: 0 0 var(--space-sm);
+}
+
+.suggestList {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.suggestChip {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    line-height: 1.45;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.suggestChip:hover:not(:disabled) {
+    border-color: var(--accent-purple);
+    background: color-mix(in srgb, var(--accent-purple) 12%, var(--bg-glass));
+    color: var(--text-primary);
+}
+
+.suggestChip:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.suggestSkeleton {
+    height: 42px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-glass);
+    animation: pulse-glow 1.4s ease-in-out infinite;
+}
+
+.suggestEmpty {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    padding: var(--space-sm);
+    border-radius: var(--radius-sm);
+    background: var(--bg-glass);
+    font-size: var(--text-xs);
+    color: var(--text-tertiary);
+    line-height: 1.4;
+}
+
+.suggestRetry {
+    background: none;
+    border: none;
+    padding: 0;
+    color: var(--accent-blue);
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.suggestRetry:hover {
+    text-decoration: underline;
 }
 
 /* Metrics */

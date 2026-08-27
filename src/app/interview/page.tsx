@@ -28,6 +28,7 @@ import {
     FileText,
     X,
     Send,
+    MessageCircleQuestion,
 } from 'lucide-react';
 import Header from '@/components/layout/Header';
 import Card from '@/components/ui/Card';
@@ -113,6 +114,8 @@ function InterviewSession() {
     const [messages, setMessages] = useState<Array<{ role: string, content: string }>>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [aiError, setAiError] = useState('');
+    const [suggestions, setSuggestions] = useState<string[]>([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
 
     // Resume upload state
     const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -140,6 +143,7 @@ function InterviewSession() {
     const isMutedRef = useRef(false);
     const inFlightRef = useRef(false);
     const generateAbortRef = useRef<AbortController | null>(null);
+    const suggestAbortRef = useRef<AbortController | null>(null);
     const transcriptRef = useRef<HTMLDivElement>(null);
     const appendRef = useRef<(msg: { role: 'user'; content: string }) => Promise<void>>(
         async () => {}
@@ -251,12 +255,56 @@ function InterviewSession() {
         return released;
     };
 
+    const loadSuggestions = async () => {
+        suggestAbortRef.current?.abort();
+        const controller = new AbortController();
+        suggestAbortRef.current = controller;
+        setSuggestionsLoading(true);
+
+        try {
+            const res = await fetch('/api/interview/suggest', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    messages: messagesRef.current,
+                    topic: selectedType,
+                    customTopic: customTopic || undefined,
+                    difficulty: selectedDifficulty,
+                }),
+                signal: controller.signal,
+            });
+            if (!isActiveRef.current || controller.signal.aborted) return;
+            const data = await res.json().catch(() => ({}));
+            const list = Array.isArray(data.suggestions)
+                ? data.suggestions
+                    .filter((item: unknown): item is string => typeof item === 'string' && item.trim().length > 8)
+                    .map((item: string) => item.trim())
+                    .slice(0, 4)
+                : [];
+            if (isActiveRef.current && !controller.signal.aborted) {
+                setSuggestions(list);
+            }
+        } catch (error) {
+            if (error instanceof DOMException && error.name === 'AbortError') return;
+            if (isActiveRef.current && !controller.signal.aborted) {
+                setSuggestions([]);
+            }
+        } finally {
+            if (isActiveRef.current && !controller.signal.aborted) {
+                setSuggestionsLoading(false);
+            }
+        }
+    };
+
     const requestAiReply = async () => {
         if (inFlightRef.current) return;
         inFlightRef.current = true;
         stopRecording();
         setAiError('');
         setIsLoading(true);
+        suggestAbortRef.current?.abort();
+        setSuggestions([]);
+        setSuggestionsLoading(true);
 
         try {
             generateAbortRef.current?.abort();
@@ -305,6 +353,7 @@ function InterviewSession() {
             const pieces = [...ready, ...(leftover ? [leftover] : [])];
             if (isActiveRef.current) {
                 releaseSpokenText('', pieces.length ? pieces : [text]);
+                void loadSuggestions();
             }
         } catch (error) {
             if (!isActiveRef.current) return;
@@ -322,6 +371,7 @@ function InterviewSession() {
                 messagesRef.current = next;
                 return next;
             });
+            setSuggestionsLoading(false);
         } finally {
             if (isActiveRef.current) {
                 setIsLoading(false);
@@ -338,6 +388,17 @@ function InterviewSession() {
         await requestAiReply();
     };
     appendRef.current = append;
+
+    const askSuggestion = (question: string) => {
+        const text = question.trim();
+        if (!text || !isActive || isPaused || isLoading || isSpeaking || inFlightRef.current) return;
+        stopRecording();
+        setInterimAnswer('');
+        setTypedAnswer('');
+        setCurrentAnswer('');
+        currentAnswerRef.current = '';
+        void append({ role: 'user', content: text });
+    };
 
     // Keep isSpeakingRef in sync
     useEffect(() => { isSpeakingRef.current = isSpeaking; }, [isSpeaking]);
@@ -1061,6 +1122,9 @@ function InterviewSession() {
                             onClick={async () => {
                                 isActiveRef.current = false;
                                 generateAbortRef.current?.abort();
+                                suggestAbortRef.current?.abort();
+                                setSuggestions([]);
+                                setSuggestionsLoading(false);
                                 stopSpeaking(true);
                                 stopRecording();
                                 stopCamera();
@@ -1186,6 +1250,58 @@ function InterviewSession() {
                                             <div className={styles.tipItem}>
                                                 <Lightbulb size={14} color="var(--accent-blue)" />
                                                 <span>Start speaking to see live feedback</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Follow-up questions the candidate can ask */}
+                                <div className={styles.suggestSection}>
+                                    <h4 className={styles.tipsLabel}>
+                                        <MessageCircleQuestion size={12} />
+                                        Ask the interviewer
+                                    </h4>
+                                    <p className={styles.suggestHint}>
+                                        {isLoading || isSpeaking
+                                            ? 'Suggestions update after this question.'
+                                            : 'Tap a question to ask it out loud in the interview.'}
+                                    </p>
+                                    <div className={styles.suggestList}>
+                                        {suggestionsLoading && suggestions.length === 0 ? (
+                                            <>
+                                                <div className={styles.suggestSkeleton} />
+                                                <div className={styles.suggestSkeleton} />
+                                                <div className={styles.suggestSkeleton} />
+                                            </>
+                                        ) : suggestions.length > 0 ? (
+                                            suggestions.map((question) => (
+                                                <button
+                                                    key={question}
+                                                    type="button"
+                                                    className={styles.suggestChip}
+                                                    disabled={isLoading || isSpeaking || isPaused || !!aiError}
+                                                    onClick={() => askSuggestion(question)}
+                                                    title={question}
+                                                >
+                                                    {question}
+                                                </button>
+                                            ))
+                                        ) : (
+                                            <div className={styles.suggestEmpty}>
+                                                <span>
+                                                    {suggestionsLoading
+                                                        ? 'Writing suggestions…'
+                                                        : 'Live questions will appear after the interviewer speaks.'}
+                                                </span>
+                                                {!suggestionsLoading && aiMessages.length > 0 && (
+                                                    <button
+                                                        type="button"
+                                                        className={styles.suggestRetry}
+                                                        onClick={() => { void loadSuggestions(); }}
+                                                    >
+                                                        Refresh
+                                                    </button>
+                                                )}
                                             </div>
                                         )}
                                     </div>
