@@ -8,7 +8,7 @@ import type { Adapter } from 'next-auth/adapters';
 import bcrypt from 'bcryptjs';
 import { db } from './db';
 import { AUTH_ERRORS } from './auth-errors';
-import { DEMO_EMAIL, ensureDemoUser } from './demo';
+import { DEMO_EMAIL, DEMO_NAME, ensureDemoUser } from './demo';
 
 /**
  * Dynamic lookup so Next.js cannot replace `process.env.GOOGLE_CLIENT_ID`
@@ -92,7 +92,28 @@ async function resolveGoogleUser(input: {
 
     await unlinkGoogleFromDemo(input.providerAccountId);
 
+    const demo = await db.user.findUnique({
+        where: { email: DEMO_EMAIL },
+        select: { id: true },
+    });
+
     let user = await db.user.findUnique({ where: { email } });
+
+    if (!demo) {
+        const stolen = await db.user.findFirst({
+            where: { name: DEMO_NAME, email },
+        });
+        if (stolen) {
+            await db.user.update({
+                where: { id: stolen.id },
+                data: { email: DEMO_EMAIL, name: DEMO_NAME },
+            });
+            user = null;
+        }
+    } else if (user?.id === demo.id) {
+        user = null;
+    }
+
     if (!user) {
         user = await db.user.create({
             data: {
@@ -102,10 +123,7 @@ async function resolveGoogleUser(input: {
                 emailVerified: new Date(),
             },
         });
-    } else if (
-        (user.name === 'Demo User' || !user.name) &&
-        input.name
-    ) {
+    } else if (!user.name && input.name) {
         user = await db.user.update({
             where: { id: user.id },
             data: { name: input.name, image: input.image ?? user.image },
@@ -270,8 +288,8 @@ export function getAuthOptions(): NextAuthOptions {
                         token.name = resolved.name;
                         token.email = resolved.email;
                         token.picture = resolved.image;
-                        return token;
                     }
+                    return token;
                 }
                 if (user) {
                     token.id = user.id;

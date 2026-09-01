@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { signOut } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 import styles from './GoogleSignInButton.module.css';
 
 function GoogleMark() {
@@ -52,12 +52,12 @@ export default function GoogleSignInButton({
                 return;
             }
 
-            // Finish signing out before starting Google, otherwise NextAuth
-            // keeps the demo session cookie and links Gmail onto Demo User.
-            await signOut({
-                redirect: true,
-                callbackUrl: `/api/auth/signin/google?callbackUrl=${encodeURIComponent('/dashboard')}`,
-            });
+            // Drop a demo (or any) session first so Google cannot attach to it.
+            // Do not GET /api/auth/signin/google afterward: with pages.signIn
+            // set to /login, NextAuth redirects that GET back to login and
+            // never starts OAuth. signIn('google') POSTs with a CSRF token.
+            await signOut({ redirect: false });
+            await signIn('google', { callbackUrl: '/dashboard' });
         } catch {
             onError?.('Google sign-in failed. Please try again.');
             setLoading(false);

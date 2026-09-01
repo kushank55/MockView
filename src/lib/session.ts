@@ -1,5 +1,5 @@
 import { getServerSession } from 'next-auth';
-import { authOptions } from './auth';
+import { getAuthOptions } from './auth';
 
 export interface SessionUser {
     id: string;
@@ -8,7 +8,7 @@ export interface SessionUser {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-    const session = await getServerSession(authOptions);
+    const session = await getServerSession(getAuthOptions());
     const id = (session?.user as { id?: string } | undefined)?.id;
     if (!id) return null;
     return {
