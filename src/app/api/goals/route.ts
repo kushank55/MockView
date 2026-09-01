@@ -1,43 +1,41 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { databaseUnreachableResponse, db } from '@/lib/db';
+import { cacheDel, dashboardCacheKey } from '@/lib/cache';
+import { jsonError } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
 import { GOAL_METRICS, type GoalMetric } from '@/lib/goals';
 
 const MAX_GOALS_PER_USER = 6;
 
 async function requireUserId() {
-    const session = await getServerSession(authOptions);
-    const userId = (session?.user as { id?: string } | undefined)?.id;
-    return userId ?? null;
+    const user = await getSessionUser();
+    return user?.id ?? null;
 }
 
-// GET /api/goals — the user's goals (raw records, progress is computed in /api/dashboard)
 export async function GET() {
     try {
         const userId = await requireUserId();
-        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!userId) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const goals = await db.goal.findMany({
             where: { userId },
             orderBy: { createdAt: 'asc' },
         });
 
-        return NextResponse.json({ goals, metrics: GOAL_METRICS });
+        return Response.json({ success: true, goals, metrics: GOAL_METRICS });
     } catch (error) {
         console.error('GET /api/goals error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to fetch goals' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to fetch goals')
         );
     }
 }
 
-// POST /api/goals — create a goal
 export async function POST(req: NextRequest) {
     try {
         const userId = await requireUserId();
-        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!userId) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const body = await req.json();
         const label = typeof body.label === 'string' ? body.label.trim() : '';
@@ -45,61 +43,55 @@ export async function POST(req: NextRequest) {
         const target = Number(body.target);
 
         if (!label || label.length > 60) {
-            return NextResponse.json(
-                { error: 'Label is required and must be 60 characters or fewer' },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', 'Label is required and must be 60 characters or fewer');
         }
         if (!GOAL_METRICS.some((m) => m.id === metric)) {
-            return NextResponse.json({ error: 'Unknown goal metric' }, { status: 400 });
+            return jsonError(400, 'VALIDATION_ERROR', 'Unknown goal metric');
         }
         if (!Number.isFinite(target) || target < 1) {
-            return NextResponse.json({ error: 'Target must be a positive number' }, { status: 400 });
+            return jsonError(400, 'VALIDATION_ERROR', 'Target must be a positive number');
         }
 
         const existingCount = await db.goal.count({ where: { userId } });
         if (existingCount >= MAX_GOALS_PER_USER) {
-            return NextResponse.json(
-                { error: `You can track up to ${MAX_GOALS_PER_USER} goals at a time` },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', `You can track up to ${MAX_GOALS_PER_USER} goals at a time`);
         }
 
         const goal = await db.goal.create({
             data: { userId, label, metric, target: Math.round(target) },
         });
 
-        return NextResponse.json(goal, { status: 201 });
+        await cacheDel(dashboardCacheKey(userId));
+        return Response.json({ success: true, ...goal }, { status: 201 });
     } catch (error) {
         console.error('POST /api/goals error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to create goal' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to create goal')
         );
     }
 }
 
-// DELETE /api/goals?id=<goalId> — remove a goal
 export async function DELETE(req: NextRequest) {
     try {
         const userId = await requireUserId();
-        if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+        if (!userId) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const id = new URL(req.url).searchParams.get('id');
-        if (!id) return NextResponse.json({ error: 'Goal id is required' }, { status: 400 });
+        if (!id) return jsonError(400, 'VALIDATION_ERROR', 'Goal id is required');
 
-        // Scope the delete to the session user so one user can't remove another's goal.
         const { count } = await db.goal.deleteMany({ where: { id, userId } });
         if (count === 0) {
-            return NextResponse.json({ error: 'Goal not found' }, { status: 404 });
+            return jsonError(404, 'NOT_FOUND', 'Goal not found');
         }
 
-        return NextResponse.json({ success: true });
+        await cacheDel(dashboardCacheKey(userId));
+        return Response.json({ success: true });
     } catch (error) {
         console.error('DELETE /api/goals error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to delete goal' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to delete goal')
         );
     }
 }

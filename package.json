@@ -33,6 +33,7 @@
     "prisma": "^6.19.2",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "redis": "^6.2.1",
     "unpdf": "^1.8.1"
   },
   "devDependencies": {

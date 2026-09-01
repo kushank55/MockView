@@ -5,6 +5,7 @@ import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
 import { oauthErrorMessage } from '@/lib/auth-errors';
+import { apiErrorMessage } from '@/lib/api-errors';
 import Link from 'next/link';
 import {
     Sparkles,
@@ -60,7 +61,7 @@ export default function SignupPage() {
             const registerData = await registerRes.json();
 
             if (!registerRes.ok) {
-                setError(registerData.error || 'Failed to create account');
+                setError(apiErrorMessage(registerData, 'Failed to create account'));
                 setLoading(false);
                 return;
             }

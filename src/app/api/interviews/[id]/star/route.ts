@@ -1,51 +1,21 @@
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { generateGeminiText } from '@/lib/gemini';
+import { NextRequest } from 'next/server';
+import { jsonError } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
+import { clientIp, enforceAiRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { db } from '@/lib/db';
 
-// ── System prompt for STAR rewriting ──
 function buildStarPrompt(
     question: string,
     userAnswer: string,
     interviewType: string
 ): string {
-    return `You are an expert career coach specializing in interview preparation.
+    return `Rewrite this ${interviewType} interview answer in STAR form. Stay faithful to what the candidate said; use placeholders like [metric] if facts are missing. JSON only:
+{"situation":"","task":"","action":"","result":"","fullAnswer":"","keyImprovements":["",""]}
 
-A candidate answered an interview question during a "${interviewType}" mock interview.
-Your task is to rewrite their answer into a polished, professional response using the STAR method.
+Q: ${question}
 
-STAR Format:
-- **Situation**: Set the context — describe the relevant background.
-- **Task**: Explain your specific responsibility or the challenge you faced.
-- **Action**: Detail the steps YOU took (use "I" statements, be specific about your contributions).
-- **Result**: Share the measurable outcome, what you learned, and the impact.
-
-ORIGINAL QUESTION:
-"${question}"
-
-CANDIDATE'S ANSWER:
-"${userAnswer}"
-
-Produce a JSON object (and NOTHING else — no markdown, no explanation) with this exact structure:
-
-{
-  "situation": "<1-2 sentences setting the context>",
-  "task": "<1-2 sentences describing the specific challenge or responsibility>",
-  "action": "<2-4 sentences detailing specific actions taken, using I-statements>",
-  "result": "<1-2 sentences with measurable outcomes or impact>",
-  "fullAnswer": "<The complete STAR answer as a single flowing paragraph that sounds natural in a real interview>",
-  "keyImprovements": ["<improvement 1>", "<improvement 2>", "<improvement 3>"]
-}
-
-Guidelines:
-1. Keep the rewrite grounded in what the candidate ACTUALLY said — don't invent facts.
-2. If the candidate's answer was vague, add placeholders like "[specific metric]" or "[project name]" that they should fill in.
-3. Make "fullAnswer" sound conversational and natural, not robotic.
-4. "keyImprovements" should list 2-4 specific things the rewrite improved (e.g., "Added quantifiable results", "Used I-statements instead of 'we'").
-5. If the answer doesn't suit STAR format (e.g., it's a pure technical/factual answer), still restructure it with a clear setup → approach → result flow.
-
-Respond ONLY with the JSON object.`;
+A: ${userAnswer}`;
 }
 
 export async function POST(
@@ -53,29 +23,30 @@ export async function POST(
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
-        await params; // Validate route param exists
+        const limit = await enforceAiRateLimit(user.id, clientIp(req));
+        if (!limit.allowed) return rateLimitResponse(limit.retryAfterSec);
+
+        const { id } = await params;
+        const owned = await db.interview.findFirst({
+            where: { id, userId: user.id },
+            select: { id: true, type: true },
+        });
+        if (!owned) {
+            return jsonError(404, 'NOT_FOUND', 'Interview not found');
+        }
 
         const { question, answer, interviewType } = await req.json();
-
         if (!question || !answer) {
-            return NextResponse.json(
-                { error: 'Question and answer are required' },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', 'Question and answer are required');
         }
 
-        // Call Gemini for STAR rewrite
-        const { text: aiResponse } = await generateText({
-            model: google('gemini-3.5-flash-lite'),
-            prompt: buildStarPrompt(question, answer, interviewType || 'general'),
+        const { text: aiResponse } = await generateGeminiText({
+            prompt: buildStarPrompt(question, String(answer).slice(0, 4000), interviewType || owned.type || 'general'),
         });
 
-        // Parse the AI response
         let starData: {
             situation: string;
             task: string;
@@ -90,26 +61,16 @@ export async function POST(
             starData = JSON.parse(cleaned);
         } catch {
             console.error('Failed to parse STAR response:', aiResponse.slice(0, 500));
-            return NextResponse.json(
-                { error: 'AI returned an invalid response. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'STAR_REWRITE_FAILED', 'AI returned an invalid response. Please try again.');
         }
 
-        // Validate structure
         if (!starData.fullAnswer || !starData.situation) {
-            return NextResponse.json(
-                { error: 'AI returned incomplete STAR data. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'STAR_REWRITE_FAILED', 'AI returned incomplete STAR data. Please try again.');
         }
 
-        return NextResponse.json(starData);
-    } catch (error: any) {
+        return Response.json({ success: true, ...starData });
+    } catch (error) {
         console.error('POST /api/interviews/[id]/star error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Failed to generate STAR response' },
-            { status: 500 }
-        );
+        return jsonError(500, 'STAR_REWRITE_FAILED', 'Failed to generate STAR response');
     }
 }

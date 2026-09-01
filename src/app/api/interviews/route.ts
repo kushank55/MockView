@@ -1,10 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { databaseUnreachableResponse, db } from '@/lib/db';
+import { cacheDel, dashboardCacheKey } from '@/lib/cache';
+import { jsonError, parsePageLimit, paginationMeta } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
 import { recordActivity } from '@/lib/progress';
 
-// ── Analytics helpers ──
 interface FeedbackData {
     communication: number;
     technical: number;
@@ -12,12 +12,23 @@ interface FeedbackData {
     confidence: number;
 }
 
-function computeAnalytics(interviews: Array<{ score: number; type: string; feedback: any; createdAt: Date }>) {
+const ANALYTICS_SAMPLE = 200;
+
+const listSelect = {
+    id: true,
+    type: true,
+    topic: true,
+    score: true,
+    duration: true,
+    questions: true,
+    createdAt: true,
+} as const;
+
+function computeAnalytics(interviews: Array<{ score: number; type: string; feedback: unknown; createdAt: Date }>) {
     const withFeedback = interviews.filter(
         (i) => i.feedback && typeof i.feedback === 'object' && !Array.isArray(i.feedback)
     );
 
-    // Average feedback scores for radar chart
     const radarSkills = withFeedback.length > 0
         ? [
             { label: 'Communication', value: Math.round(withFeedback.reduce((s, i) => s + ((i.feedback as FeedbackData).communication || 0), 0) / withFeedback.length) },
@@ -32,7 +43,6 @@ function computeAnalytics(interviews: Array<{ score: number; type: string; feedb
             { label: 'Confidence', value: 0 },
         ];
 
-    // Per-type breakdown for heatmap
     const types = ['behavioral', 'technical', 'system-design'];
     const heatmapData = types.map((type) => {
         const typeInterviews = withFeedback.filter((i) => i.type === type);
@@ -58,7 +68,6 @@ function computeAnalytics(interviews: Array<{ score: number; type: string; feedb
         };
     });
 
-    // Score trend over time (chronological order, most recent last)
     const scoreTrend = [...interviews]
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime())
         .map((i) => ({
@@ -70,65 +79,78 @@ function computeAnalytics(interviews: Array<{ score: number; type: string; feedb
     return { radarSkills, heatmapData, scoreTrend };
 }
 
-// GET /api/interviews — Fetch interviews (with optional type filter)
 export async function GET(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const { searchParams } = new URL(req.url);
         const type = searchParams.get('type');
+        const { page, limit, skip } = parsePageLimit(searchParams);
 
-        const where: { userId: string; type?: string } = { userId };
-        if (type && type !== 'all') {
-            where.type = type;
-        }
+        const where: { userId: string; type?: string } = { userId: user.id };
+        if (type && type !== 'all') where.type = type;
 
-        const interviews = await db.interview.findMany({
-            where,
-            orderBy: { createdAt: 'desc' },
-        });
+        const includeAnalytics = page === 1;
 
-        const totalInterviews = interviews.length;
-        const avgScore =
-            totalInterviews > 0
-                ? Math.round(interviews.reduce((sum, i) => sum + i.score, 0) / totalInterviews)
-                : 0;
+        const [interviews, total, analyticsRows, aggregates] = await Promise.all([
+            db.interview.findMany({
+                where,
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+                select: listSelect,
+            }),
+            db.interview.count({ where }),
+            includeAnalytics
+                ? db.interview.findMany({
+                    where,
+                    orderBy: { createdAt: 'desc' },
+                    take: ANALYTICS_SAMPLE,
+                    select: { score: true, type: true, feedback: true, createdAt: true },
+                })
+                : Promise.resolve([] as Array<{ score: number; type: string; feedback: unknown; createdAt: Date }>),
+            includeAnalytics
+                ? db.interview.aggregate({
+                    where,
+                    _avg: { score: true },
+                    _count: true,
+                })
+                : Promise.resolve({ _avg: { score: null as number | null }, _count: 0 }),
+        ]);
 
-        // Compute real analytics from feedback data
-        const analytics = computeAnalytics(interviews);
+        const totalInterviews = aggregates._count;
+        const avgScore = totalInterviews > 0 ? Math.round(aggregates._avg.score || 0) : 0;
 
-        return NextResponse.json({
+        return Response.json({
+            success: true,
             interviews,
-            stats: { totalInterviews, avgScore },
-            analytics,
+            stats: includeAnalytics ? { totalInterviews, avgScore } : undefined,
+            analytics: includeAnalytics ? computeAnalytics(analyticsRows) : undefined,
+            pagination: paginationMeta(page, limit, total),
         });
     } catch (error) {
         console.error('GET /api/interviews error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to fetch interviews' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to fetch interviews')
         );
     }
 }
 
-// POST /api/interviews — Create a new interview record
 export async function POST(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const body = await req.json();
+        if (!body.type || !body.topic || typeof body.score !== 'number') {
+            return jsonError(400, 'VALIDATION_ERROR', 'type, topic, and score are required');
+        }
 
         const interview = await db.interview.create({
             data: {
-                userId,
+                userId: user.id,
                 type: body.type,
                 topic: body.topic,
                 score: body.score,
@@ -140,20 +162,20 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        // Advance the practice streak. A failure here must not lose the
-        // interview the user just completed, so it is logged and swallowed.
         try {
-            await recordActivity(userId);
+            await recordActivity(user.id);
         } catch (streakError) {
             console.error('Failed to update streak:', streakError);
         }
 
-        return NextResponse.json(interview, { status: 201 });
+        await cacheDel(dashboardCacheKey(user.id));
+
+        return Response.json({ success: true, ...interview }, { status: 201 });
     } catch (error) {
         console.error('POST /api/interviews error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to create interview' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to create interview')
         );
     }
 }

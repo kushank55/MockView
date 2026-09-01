@@ -1,75 +1,61 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { databaseUnreachableResponse, db } from '@/lib/db';
+import { cacheDel, dashboardCacheKey } from '@/lib/cache';
+import { jsonError } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
 
-// GET /api/interviews/[id] — Fetch a single interview by ID
 export async function GET(
-    req: NextRequest,
+    _req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
         const { id } = await params;
 
-        const interview = await db.interview.findUnique({
-            where: { id },
+        const interview = await db.interview.findFirst({
+            where: { id, userId: user.id },
         });
 
         if (!interview) {
-            return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+            return jsonError(404, 'NOT_FOUND', 'Interview not found');
         }
 
-        if (interview.userId !== userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-        }
-
-        return NextResponse.json(interview);
+        return Response.json({ success: true, ...interview });
     } catch (error) {
         console.error('GET /api/interviews/[id] error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to fetch interview' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to fetch interview')
         );
     }
 }
 
-// DELETE /api/interviews/[id] — Delete an interview
 export async function DELETE(
-    req: NextRequest,
+    _req: NextRequest,
     { params }: { params: Promise<{ id: string }> }
 ) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
         const { id } = await params;
 
-        const interview = await db.interview.findUnique({
-            where: { id },
+        const { count } = await db.interview.deleteMany({
+            where: { id, userId: user.id },
         });
 
-        if (!interview) {
-            return NextResponse.json({ error: 'Interview not found' }, { status: 404 });
+        if (count === 0) {
+            return jsonError(404, 'NOT_FOUND', 'Interview not found');
         }
 
-        if (interview.userId !== userId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-        }
+        await cacheDel(dashboardCacheKey(user.id));
 
-        await db.interview.delete({
-            where: { id },
-        });
-
-        return NextResponse.json({ success: true });
+        return Response.json({ success: true });
     } catch (error) {
         console.error('DELETE /api/interviews/[id] error:', error);
-        return NextResponse.json({ error: 'Failed to delete interview' }, { status: 500 });
+        return (
+            databaseUnreachableResponse(error) ??
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to delete interview')
+        );
     }
 }

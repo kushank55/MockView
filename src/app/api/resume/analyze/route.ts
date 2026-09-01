@@ -1,59 +1,29 @@
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+import { cacheDel, dashboardCacheKey } from '@/lib/cache';
+import { jsonError } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
+import { clientIp, enforceAiRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { generateGeminiText } from '@/lib/gemini';
 import { db } from '@/lib/db';
 import { extractPdfText } from '@/lib/pdf-text';
 
-// ── System prompt for resume ATS analysis ──
 function buildPrompt(resumeText: string, targetRole: string): string {
-    return `You are an expert ATS (Applicant Tracking System) analyzer and career consultant.
+    return `ATS-analyze this resume for "${targetRole}". JSON only:
+{"atsScore":0,"keywordData":[{"keyword":"","count":0,"relevance":0,"found":false}],"sectionScores":[{"label":"Contact Info","score":0},{"label":"Summary","score":0},{"label":"Experience","score":0},{"label":"Skills","score":0},{"label":"Education","score":0},{"label":"Keywords","score":0}],"improvements":[{"severity":"critical","title":"","description":""}]}
+10-15 role-critical keywords (found true/false). 4-8 improvements, critical first. Generic resumes score 30-50.
 
-Analyze the following resume text for the target role: "${targetRole}".
-
-Produce a JSON object (and NOTHING else — no markdown, no explanation) with this exact structure:
-
-{
-  "atsScore": <number 0-100>,
-  "keywordData": [
-    { "keyword": "<term>", "count": <number>, "relevance": <number 0-100>, "found": <boolean> }
-  ],
-  "sectionScores": [
-    { "label": "Contact Info", "score": <0-100> },
-    { "label": "Summary", "score": <0-100> },
-    { "label": "Experience", "score": <0-100> },
-    { "label": "Skills", "score": <0-100> },
-    { "label": "Education", "score": <0-100> },
-    { "label": "Keywords", "score": <0-100> }
-  ],
-  "improvements": [
-    { "severity": "critical" | "warning" | "suggestion", "title": "<short title>", "description": "<actionable advice>" }
-  ]
-}
-
-Guidelines:
-1. keywordData must include 10-15 keywords that are CRITICAL for the "${targetRole}" role. Mark each as found/missing based on whether the resume contains it.
-2. sectionScores should evaluate each resume section's completeness and quality for the target role.
-3. improvements should include 4-8 actionable items sorted by severity (critical first). These MUST be specific to the "${targetRole}" role, referencing exact skills, tools, or phrasing that would improve ATS pass rates.
-4. atsScore is the overall score considering keyword match, section quality, formatting, and role relevance.
-5. Be strict but fair. A generic resume with no role-specific keywords should score 30-50.
-
-RESUME TEXT:
----
-${resumeText}
----
-
-Respond ONLY with the JSON object.`;
+RESUME:
+${resumeText}`;
 }
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
+        const userId = user.id;
+
+        const limit = await enforceAiRateLimit(user.id, clientIp(req));
+        if (!limit.allowed) return rateLimitResponse(limit.retryAfterSec);
 
         // ── Parse multipart form data ──
         const formData = await req.formData();
@@ -61,7 +31,7 @@ export async function POST(req: NextRequest) {
         const targetRole = (formData.get('targetRole') as string) || 'General';
 
         if (!file) {
-            return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+            return jsonError(400, 'VALIDATION_ERROR', 'No file provided');
         }
 
         // ── Extract text from PDF ──
@@ -73,23 +43,16 @@ export async function POST(req: NextRequest) {
             resumeText = await extractPdfText(buffer);
         } catch (parseErr) {
             console.error('PDF parse error:', parseErr);
-            return NextResponse.json(
-                { error: 'Failed to parse PDF. Please ensure the file is a valid text-based PDF.' },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', 'Failed to parse PDF. Please ensure the file is a valid text-based PDF.');
         }
 
         if (!resumeText || resumeText.trim().length < 50) {
-            return NextResponse.json(
-                { error: 'Could not extract enough text from the PDF. The file may be image-based — please use a text-based PDF.' },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', 'Could not extract enough text from the PDF. The file may be image-based — please use a text-based PDF.');
         }
 
         // ── Call Gemini for ATS analysis ──
-        const { text: aiResponse } = await generateText({
-            model: google('gemini-3.5-flash-lite'),
-            prompt: buildPrompt(resumeText.slice(0, 15000), targetRole), // Cap at 15k chars
+        const { text: aiResponse } = await generateGeminiText({
+            prompt: buildPrompt(resumeText.slice(0, 15000), targetRole),
         });
 
         // ── Parse AI response ──
@@ -106,10 +69,7 @@ export async function POST(req: NextRequest) {
             analysisData = JSON.parse(cleaned);
         } catch {
             console.error('Failed to parse AI response:', aiResponse.slice(0, 500));
-            return NextResponse.json(
-                { error: 'AI returned an invalid response. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'RESUME_ANALYSIS_FAILED', 'AI returned an invalid response. Please try again.');
         }
 
         // ── Validate basic structure ──
@@ -119,10 +79,7 @@ export async function POST(req: NextRequest) {
             !Array.isArray(analysisData.sectionScores) ||
             !Array.isArray(analysisData.improvements)
         ) {
-            return NextResponse.json(
-                { error: 'AI analysis returned incomplete data. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'RESUME_ANALYSIS_FAILED', 'AI analysis returned incomplete data. Please try again.');
         }
 
         // ── Save to database ──
@@ -138,15 +95,14 @@ export async function POST(req: NextRequest) {
                 // Stored so the interview flow can personalize questions from
                 // this resume without a second upload.
                 resumeText: resumeText.slice(0, 10000),
-            } as any, // Cast to any to suppress IDE lag (Prisma client is synced, IDE just hasn't updated)
+            },
         });
 
-        return NextResponse.json(saved, { status: 201 });
+        await cacheDel(dashboardCacheKey(userId));
+
+        return Response.json({ success: true, ...saved }, { status: 201 });
     } catch (error: unknown) {
         console.error('POST /api/resume/analyze error:', error);
-        return NextResponse.json(
-            { error: 'Failed to analyze resume' },
-            { status: 500 }
-        );
+        return jsonError(500, 'RESUME_ANALYSIS_FAILED', 'Failed to analyze resume');
     }
 }

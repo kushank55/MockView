@@ -29,7 +29,7 @@ import Button from '@/components/ui/Button';
 import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
 import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
-import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
+import { isDatabaseUnreachableResponse, apiErrorMessage } from '@/lib/api-errors';
 import styles from './playback.module.css';
 
 interface InterviewData {
@@ -118,7 +118,7 @@ export default function InterviewPlaybackPage() {
                 if (isDatabaseUnreachableResponse(res, data)) {
                     throw new Error('DATABASE_UNREACHABLE');
                 }
-                if (!res.ok) throw new Error(data.error || 'Interview not found');
+                if (!res.ok) throw new Error(apiErrorMessage(data, 'Interview not found'));
                 setInterview(data);
             })
             .catch((err) => {
@@ -167,14 +167,17 @@ export default function InterviewPlaybackPage() {
 
             if (!res.ok) {
                 const errData = await res.json();
-                throw new Error(errData.error || 'Failed to generate STAR response');
+                throw new Error(apiErrorMessage(errData, 'Failed to generate STAR response'));
             }
 
             const data = await res.json();
             setStarResponses((prev) => ({ ...prev, [pairIndex]: data }));
             setExpandedStar(pairIndex);
-        } catch (err: any) {
-            setStarErrors((prev) => ({ ...prev, [pairIndex]: err.message }));
+        } catch (err: unknown) {
+            setStarErrors((prev) => ({
+                ...prev,
+                [pairIndex]: err instanceof Error ? err.message : 'Failed to generate STAR response',
+            }));
         } finally {
             setStarLoading((prev) => ({ ...prev, [pairIndex]: false }));
         }
@@ -222,7 +225,7 @@ export default function InterviewPlaybackPage() {
                             if (isDatabaseUnreachableResponse(res, data)) {
                                 throw new Error('DATABASE_UNREACHABLE');
                             }
-                            if (!res.ok) throw new Error(data.error || 'Interview not found');
+                            if (!res.ok) throw new Error(apiErrorMessage(data, 'Interview not found'));
                             setInterview(data);
                         })
                         .catch((err) => setError(err.message))

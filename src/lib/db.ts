@@ -1,6 +1,6 @@
 import { PrismaClient } from '@prisma/client';
 import { NextResponse } from 'next/server';
-import { DATABASE_UNREACHABLE, DATABASE_UNREACHABLE_MESSAGE } from './api-errors';
+import { databaseUnavailable } from './http';
 
 const globalForPrisma = globalThis as unknown as {
     prisma: PrismaClient | undefined;
@@ -49,9 +49,5 @@ export function isDatabaseUnreachable(error: unknown): boolean {
  */
 export function databaseUnreachableResponse(error: unknown): NextResponse | null {
     if (!isDatabaseUnreachable(error)) return null;
-
-    return NextResponse.json(
-        { error: DATABASE_UNREACHABLE_MESSAGE, code: DATABASE_UNREACHABLE },
-        { status: 503 }
-    );
+    return databaseUnavailable();
 }

@@ -28,7 +28,7 @@ import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import ProgressRing from '@/components/ui/ProgressRing';
 import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
-import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
+import { isDatabaseUnreachableResponse, apiErrorMessage } from '@/lib/api-errors';
 import styles from './dashboard.module.css';
 
 // ── Types for API response ──
@@ -176,7 +176,7 @@ export default function DashboardPage() {
             });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || 'Could not create goal');
+                throw new Error(apiErrorMessage(err, 'Could not create goal'));
             }
             resetGoalForm();
             await loadDashboard();

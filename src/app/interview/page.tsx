@@ -35,6 +35,7 @@ import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import styles from './interview.module.css';
+import { apiErrorMessage } from '@/lib/api-errors';
 
 const interviewTypes = [
     { id: 'behavioral', label: 'Behavioral', icon: MessageSquare, color: 'var(--accent-blue)' },
@@ -332,10 +333,12 @@ function InterviewSession() {
             const text = typeof data.text === 'string' ? data.text.trim() : '';
             if (!res.ok || !text) {
                 throw new Error(
-                    data.error ||
-                    (res.status === 429
-                        ? 'The interviewer is rate-limited right now. Wait about a minute, then retry.'
-                        : 'Could not reach the interviewer. Please retry.')
+                    apiErrorMessage(
+                        data,
+                        res.status === 429
+                            ? 'The interviewer is rate-limited right now. Wait about a minute, then retry.'
+                            : 'Could not reach the interviewer. Please retry.'
+                    )
                 );
             }
 
@@ -484,7 +487,7 @@ function InterviewSession() {
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
-                throw new Error(data.error || 'Failed to parse resume');
+                throw new Error(apiErrorMessage(data, 'Failed to parse resume'));
             }
             if (!data.text || String(data.text).trim().length < 30) {
                 throw new Error('Could not extract enough text from the PDF.');

@@ -76,6 +76,9 @@ export default function HistoryPage() {
     const [filter, setFilter] = useState('all');
     const [interviews, setInterviews] = useState<Interview[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
+    const [page, setPage] = useState(1);
+    const [hasMore, setHasMore] = useState(false);
     const [dbUnreachable, setDbUnreachable] = useState(false);
 
     // Real analytics from API
@@ -83,20 +86,27 @@ export default function HistoryPage() {
     const [heatmapData, setHeatmapData] = useState<HeatmapCategory[]>([]);
     const [scoreTrend, setScoreTrend] = useState<ScoreTrendPoint[]>([]);
 
-    const loadInterviews = React.useCallback(() => {
+    const loadInterviews = React.useCallback((opts?: { page?: number; append?: boolean }) => {
+        const nextPage = opts?.page ?? 1;
+        const append = Boolean(opts?.append);
         const params = new URLSearchParams();
         if (filter !== 'all') params.set('type', filter);
+        params.set('page', String(nextPage));
+        params.set('limit', '20');
 
-        setDbUnreachable(false);
         return fetch(`/api/interviews?${params.toString()}`)
             .then(async (res) => {
                 const data = await res.json().catch(() => ({}));
                 if (isDatabaseUnreachableResponse(res, data)) {
                     setDbUnreachable(true);
-                    setInterviews([]);
+                    if (!append) setInterviews([]);
                     return;
                 }
-                setInterviews(data.interviews || []);
+                setDbUnreachable(false);
+                const rows: Interview[] = data.interviews || [];
+                setInterviews((prev) => (append ? [...prev, ...rows] : rows));
+                setPage(nextPage);
+                setHasMore(Boolean(data.pagination?.hasMore));
                 if (data.analytics) {
                     setRadarSkills(data.analytics.radarSkills || []);
                     setHeatmapData(data.analytics.heatmapData || []);
@@ -109,12 +119,13 @@ export default function HistoryPage() {
             })
             .finally(() => {
                 setLoading(false);
+                setLoadingMore(false);
             });
     }, [filter]);
 
     // ── Fetch interviews + analytics from API ──
     useEffect(() => {
-        loadInterviews();
+        loadInterviews({ page: 1 });
     }, [loadInterviews]);
 
     // ── Score Trend SVG helpers ──
@@ -160,7 +171,7 @@ export default function HistoryPage() {
             <Header title="Interview History" subtitle="Track your performance and growth over time" />
 
             {dbUnreachable ? (
-                <DatabaseUnreachable onRetry={() => { setLoading(true); loadInterviews(); }} />
+                <DatabaseUnreachable onRetry={() => { setLoading(true); loadInterviews({ page: 1 }); }} />
             ) : (
             <div className={styles.mainGrid}>
                 {/* Left — Interview List */}
@@ -248,6 +259,22 @@ export default function HistoryPage() {
                                     </Card>
                                 </motion.div>
                             ))}
+                            {hasMore && (
+                                <div className={styles.loadMoreWrap}>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="ghost"
+                                        disabled={loadingMore}
+                                        onClick={() => {
+                                            setLoadingMore(true);
+                                            loadInterviews({ page: page + 1, append: true });
+                                        }}
+                                    >
+                                        {loadingMore ? 'Loading…' : 'Load more'}
+                                    </Button>
+                                </div>
+                            )}
                         </motion.div>
                     )}
                 </div>

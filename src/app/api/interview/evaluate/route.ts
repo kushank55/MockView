@@ -1,10 +1,9 @@
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
+import { jsonError } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
+import { clientIp, enforceAiRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { generateGeminiText, MAX_EVAL_MESSAGES, trimChatMessages } from '@/lib/gemini';
 
-// ── System prompt for post-interview evaluation ──
 function buildEvaluationPrompt(
     transcript: Array<{ role: string; content: string }>,
     interviewType: string
@@ -13,64 +12,32 @@ function buildEvaluationPrompt(
         .map((m) => `${m.role === 'assistant' ? 'Interviewer' : 'Candidate'}: ${m.content}`)
         .join('\n\n');
 
-    return `You are an expert interview evaluator and career coach.
+    return `Score this ${interviewType} mock interview. JSON only:
+{"score":0,"feedback":{"communication":0,"technical":0,"problemSolving":0,"confidence":0},"coachTips":[{"type":"strength","text":"","color":"emerald"}],"summary":""}
+Weights: communication 25%, technical 30%, problem solving 25%, confidence 20%. 4-6 coachTips (strength=emerald, improvement=amber, tip=blue) grounded in the transcript. Short transcripts score 40-60.
 
-You have just observed a "${interviewType}" mock interview. Analyze the following transcript and produce a detailed evaluation.
-
-Produce a JSON object (and NOTHING else — no markdown, no explanation) with this exact structure:
-
-{
-  "score": <number 0-100, overall interview performance>,
-  "feedback": {
-    "communication": <number 0-100>,
-    "technical": <number 0-100>,
-    "problemSolving": <number 0-100>,
-    "confidence": <number 0-100>
-  },
-  "coachTips": [
-    { "type": "strength" | "improvement" | "tip", "text": "<concise actionable feedback>", "color": "emerald" | "amber" | "blue" }
-  ],
-  "summary": "<2-3 sentence overall assessment of the candidate's performance>"
-}
-
-Guidelines:
-1. "score" is the weighted overall score. Communication (25%), Technical Knowledge (30%), Problem Solving (25%), Confidence (20%).
-2. "feedback" breaks down into 4 sub-scores. Be strict but fair — a vague or short answer should score 30-50 for that category.
-3. "coachTips" should contain 4-6 items. Include at least 1 "strength" (color: "emerald"), 2-3 "improvement" items (color: "amber"), and 1-2 "tip" items (color: "blue"). Each tip text must be specific to what the candidate ACTUALLY said (or failed to say).
-4. "summary" should be encouraging but honest.
-5. If the transcript is very short (1-2 exchanges), score conservatively (40-60) and note that more practice is needed.
-
-INTERVIEW TRANSCRIPT:
----
-${formattedTranscript}
----
-
-Respond ONLY with the JSON object.`;
+TRANSCRIPT:
+${formattedTranscript}`;
 }
 
 export async function POST(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
+
+        const limit = await enforceAiRateLimit(user.id, clientIp(req));
+        if (!limit.allowed) return rateLimitResponse(limit.retryAfterSec);
 
         const { transcript, type } = await req.json();
-
         if (!transcript || !Array.isArray(transcript) || transcript.length === 0) {
-            return NextResponse.json(
-                { error: 'A non-empty transcript is required for evaluation' },
-                { status: 400 }
-            );
+            return jsonError(400, 'VALIDATION_ERROR', 'A non-empty transcript is required for evaluation');
         }
 
-        // Call Gemini for evaluation
-        const { text: aiResponse } = await generateText({
-            model: google('gemini-3.5-flash-lite'),
-            prompt: buildEvaluationPrompt(transcript, type || 'general'),
+        const trimmed = trimChatMessages(transcript, MAX_EVAL_MESSAGES);
+        const { text: aiResponse } = await generateGeminiText({
+            prompt: buildEvaluationPrompt(trimmed, type || 'general'),
         });
 
-        // Parse the AI response
         let evaluationData: {
             score: number;
             feedback: {
@@ -88,37 +55,26 @@ export async function POST(req: NextRequest) {
             evaluationData = JSON.parse(cleaned);
         } catch {
             console.error('Failed to parse AI evaluation:', aiResponse.slice(0, 500));
-            return NextResponse.json(
-                { error: 'AI returned an invalid evaluation. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'EVALUATION_FAILED', 'AI returned an invalid evaluation. Please try again.');
         }
 
-        // Validate structure
         if (
             typeof evaluationData.score !== 'number' ||
             !evaluationData.feedback ||
             !Array.isArray(evaluationData.coachTips)
         ) {
-            return NextResponse.json(
-                { error: 'AI evaluation returned incomplete data. Please try again.' },
-                { status: 502 }
-            );
+            return jsonError(502, 'EVALUATION_FAILED', 'AI evaluation returned incomplete data. Please try again.');
         }
 
-        // Clamp scores to 0-100
         evaluationData.score = Math.max(0, Math.min(100, Math.round(evaluationData.score)));
         evaluationData.feedback.communication = Math.max(0, Math.min(100, Math.round(evaluationData.feedback.communication)));
         evaluationData.feedback.technical = Math.max(0, Math.min(100, Math.round(evaluationData.feedback.technical)));
         evaluationData.feedback.problemSolving = Math.max(0, Math.min(100, Math.round(evaluationData.feedback.problemSolving)));
         evaluationData.feedback.confidence = Math.max(0, Math.min(100, Math.round(evaluationData.feedback.confidence)));
 
-        return NextResponse.json(evaluationData);
-    } catch (error: any) {
+        return Response.json({ success: true, ...evaluationData });
+    } catch (error) {
         console.error('POST /api/interview/evaluate error:', error);
-        return NextResponse.json(
-            { error: error.message || 'Failed to evaluate interview' },
-            { status: 500 }
-        );
+        return jsonError(500, 'EVALUATION_FAILED', 'Failed to evaluate interview');
     }
 }

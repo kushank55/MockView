@@ -1,46 +1,60 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { NextRequest } from 'next/server';
 import { databaseUnreachableResponse, db } from '@/lib/db';
+import { cacheDel, dashboardCacheKey } from '@/lib/cache';
+import { jsonError, parsePageLimit, paginationMeta } from '@/lib/http';
+import { getSessionUser } from '@/lib/session';
 
-// GET /api/resume — Fetch resume analyses for a user
-export async function GET() {
+export async function GET(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
-        const analyses = await db.resumeAnalysis.findMany({
-            where: { userId },
-            orderBy: { createdAt: 'desc' },
+        const { page, limit, skip } = parsePageLimit(new URL(req.url).searchParams);
+
+        const [analyses, total] = await Promise.all([
+            db.resumeAnalysis.findMany({
+                where: { userId: user.id },
+                orderBy: { createdAt: 'desc' },
+                skip,
+                take: limit,
+                select: {
+                    id: true,
+                    fileName: true,
+                    fileUrl: true,
+                    targetRole: true,
+                    atsScore: true,
+                    keywordData: true,
+                    sectionScores: true,
+                    improvements: true,
+                    createdAt: true,
+                },
+            }),
+            db.resumeAnalysis.count({ where: { userId: user.id } }),
+        ]);
+
+        return Response.json({
+            success: true,
+            analyses,
+            pagination: paginationMeta(page, limit, total),
         });
-
-        return NextResponse.json({ analyses });
     } catch (error) {
         console.error('GET /api/resume error:', error);
         return (
             databaseUnreachableResponse(error) ??
-            NextResponse.json({ error: 'Failed to fetch resume analyses' }, { status: 500 })
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to fetch resume analyses')
         );
     }
 }
 
-// POST /api/resume — Create a new resume analysis
 export async function POST(req: NextRequest) {
     try {
-        const session = await getServerSession(authOptions);
-        if (!session?.user || !(session.user as { id?: string }).id) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-        }
-        const userId = (session.user as { id: string }).id;
+        const user = await getSessionUser();
+        if (!user) return jsonError(401, 'UNAUTHORIZED', 'Unauthorized');
 
         const body = await req.json();
-
         const analysis = await db.resumeAnalysis.create({
             data: {
-                userId,
+                userId: user.id,
                 fileName: body.fileName,
                 fileUrl: body.fileUrl || null,
                 atsScore: body.atsScore,
@@ -50,9 +64,10 @@ export async function POST(req: NextRequest) {
             },
         });
 
-        return NextResponse.json(analysis, { status: 201 });
+        await cacheDel(dashboardCacheKey(user.id));
+        return Response.json({ success: true, ...analysis }, { status: 201 });
     } catch (error) {
         console.error('POST /api/resume error:', error);
-        return NextResponse.json({ error: 'Failed to create resume analysis' }, { status: 500 });
+        return jsonError(500, 'INTERNAL_ERROR', 'Failed to create resume analysis');
     }
 }

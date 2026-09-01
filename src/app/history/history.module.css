@@ -62,6 +62,12 @@
     gap: var(--space-sm);
 }
 
+.loadMoreWrap {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-md) 0;
+}
+
 .interviewCard {
     cursor: pointer;
 }

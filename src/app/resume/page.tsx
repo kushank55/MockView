@@ -29,7 +29,7 @@ import Badge from '@/components/ui/Badge';
 import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
 import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
-import { isDatabaseUnreachableResponse } from '@/lib/api-errors';
+import { isDatabaseUnreachableResponse, apiErrorMessage } from '@/lib/api-errors';
 import styles from './resume.module.css';
 
 // ── Types ──
@@ -213,7 +213,7 @@ export default function ResumePage() {
             const data = await res.json();
 
             if (!res.ok) {
-                throw new Error(data.error || 'Analysis failed');
+                throw new Error(apiErrorMessage(data, 'Analysis failed'));
             }
 
             setAnalysis(data);
