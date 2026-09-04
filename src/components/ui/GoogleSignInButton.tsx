@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { signIn, signOut } from 'next-auth/react';
+import { signOut } from 'next-auth/react';
 import styles from './GoogleSignInButton.module.css';
 
 function GoogleMark() {
@@ -52,22 +52,12 @@ export default function GoogleSignInButton({
                 return;
             }
 
-            // Drop a demo (or any) session first. NextAuth links Google onto
-            // the current user, which is why Gmail was landing as Demo User.
-            await signOut({ redirect: false });
-
-            const res = await signIn('google', {
-                callbackUrl: '/dashboard',
+            // Finish signing out before starting Google, otherwise NextAuth
+            // keeps the demo session cookie and links Gmail onto Demo User.
+            await signOut({
                 redirect: true,
+                callbackUrl: `/api/auth/signin/google?callbackUrl=${encodeURIComponent('/dashboard')}`,
             });
-            if (res?.error) {
-                onError?.(
-                    res.error === 'OAuthAccountNotLinked'
-                        ? 'This email already has an account. Sign in with email and password.'
-                        : 'Google sign-in was cancelled or failed. Please try again.'
-                );
-                setLoading(false);
-            }
         } catch {
             onError?.('Google sign-in failed. Please try again.');
             setLoading(false);

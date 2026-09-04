@@ -66,30 +66,6 @@ function applyVercelAuthUrl() {
     if (host) process.env.NEXTAUTH_URL = `https://${host}`;
 }
 
-/**
- * Demo is a shared playground account. NextAuth will otherwise *link* Google
- * onto whoever is already signed in — so "Continue with Google" after trying
- * the demo silently keeps you as Demo User. Treat the demo session as signed
- * out during OAuth, and never resolve a Google account that was already tied
- * to demo@mockview.ai.
- */
-function createAuthAdapter(): Adapter {
-    const base = PrismaAdapter(db) as Adapter;
-    return {
-        ...base,
-        async getUser(id) {
-            const user = await base.getUser?.(id);
-            if (user?.email === DEMO_EMAIL) return null;
-            return user ?? null;
-        },
-        async getUserByAccount(providerAccount) {
-            const user = await base.getUserByAccount?.(providerAccount);
-            if (user?.email === DEMO_EMAIL) return null;
-            return user ?? null;
-        },
-    };
-}
-
 async function unlinkGoogleFromDemo(providerAccountId: string) {
     await db.account.deleteMany({
         where: {
@@ -98,6 +74,68 @@ async function unlinkGoogleFromDemo(providerAccountId: string) {
             user: { email: DEMO_EMAIL },
         },
     });
+}
+
+/**
+ * NextAuth links a new Google login onto the current session. After someone
+ * tries the demo, that session is Demo User — so Gmail keeps opening the
+ * shared playground account. Always resolve Google to a real user by email.
+ */
+async function resolveGoogleUser(input: {
+    providerAccountId: string;
+    email?: string | null;
+    name?: string | null;
+    image?: string | null;
+}) {
+    const email = input.email?.trim().toLowerCase();
+    if (!email || email === DEMO_EMAIL) return null;
+
+    await unlinkGoogleFromDemo(input.providerAccountId);
+
+    let user = await db.user.findUnique({ where: { email } });
+    if (!user) {
+        user = await db.user.create({
+            data: {
+                email,
+                name: input.name || email.split('@')[0],
+                image: input.image,
+                emailVerified: new Date(),
+            },
+        });
+    } else if (
+        (user.name === 'Demo User' || !user.name) &&
+        input.name
+    ) {
+        user = await db.user.update({
+            where: { id: user.id },
+            data: { name: input.name, image: input.image ?? user.image },
+        });
+    }
+
+    const existing = await db.account.findUnique({
+        where: {
+            provider_providerAccountId: {
+                provider: 'google',
+                providerAccountId: input.providerAccountId,
+            },
+        },
+    });
+
+    if (existing && existing.userId !== user.id) {
+        await db.account.delete({ where: { id: existing.id } });
+    }
+    if (!existing || existing.userId !== user.id) {
+        await db.account.create({
+            data: {
+                userId: user.id,
+                type: 'oauth',
+                provider: 'google',
+                providerAccountId: input.providerAccountId,
+            },
+        });
+    }
+
+    return user;
 }
 
 export function getAuthOptions(): NextAuthOptions {
@@ -125,7 +163,7 @@ export function getAuthOptions(): NextAuthOptions {
     }
 
     return {
-        adapter: createAuthAdapter(),
+        adapter: PrismaAdapter(db) as Adapter,
         secret: readProjectEnv('NEXTAUTH_SECRET') || undefined,
         session: {
             strategy: 'jwt',
@@ -212,7 +250,29 @@ export function getAuthOptions(): NextAuthOptions {
                 }
                 return true;
             },
-            async jwt({ token, user }) {
+            async jwt({ token, user, account, profile }) {
+                if (account?.provider === 'google') {
+                    const googleProfile = profile as
+                        | { email?: string; name?: string; picture?: string; image?: string }
+                        | undefined;
+                    const resolved = await resolveGoogleUser({
+                        providerAccountId: account.providerAccountId,
+                        email: googleProfile?.email || user?.email,
+                        name: googleProfile?.name || user?.name,
+                        image:
+                            googleProfile?.picture ||
+                            googleProfile?.image ||
+                            user?.image,
+                    });
+                    if (resolved) {
+                        token.id = resolved.id;
+                        token.sub = resolved.id;
+                        token.name = resolved.name;
+                        token.email = resolved.email;
+                        token.picture = resolved.image;
+                        return token;
+                    }
+                }
                 if (user) {
                     token.id = user.id;
                     token.name = user.name;
