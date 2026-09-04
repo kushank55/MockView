@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { signIn } from 'next-auth/react';
+import { signIn, signOut } from 'next-auth/react';
 import styles from './GoogleSignInButton.module.css';
 
 function GoogleMark() {
@@ -29,24 +29,47 @@ function GoogleMark() {
 
 interface GoogleSignInButtonProps {
     label?: string;
+    onError?: (message: string) => void;
 }
 
 export default function GoogleSignInButton({
     label = 'Continue with Google',
+    onError,
 }: GoogleSignInButtonProps) {
     const [loading, setLoading] = useState(false);
 
     const handleClick = async () => {
         setLoading(true);
         try {
+            const providers = await fetch('/api/auth/providers')
+                .then((res) => res.json())
+                .catch(() => null);
+            if (!providers?.google) {
+                onError?.(
+                    'Google sign-in is not configured on this deployment. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel, then redeploy.'
+                );
+                setLoading(false);
+                return;
+            }
+
+            // Drop a demo (or any) session first. NextAuth links Google onto
+            // the current user, which is why Gmail was landing as Demo User.
+            await signOut({ redirect: false });
+
             const res = await signIn('google', {
                 callbackUrl: '/dashboard',
                 redirect: true,
             });
             if (res?.error) {
+                onError?.(
+                    res.error === 'OAuthAccountNotLinked'
+                        ? 'This email already has an account. Sign in with email and password.'
+                        : 'Google sign-in was cancelled or failed. Please try again.'
+                );
                 setLoading(false);
             }
         } catch {
+            onError?.('Google sign-in failed. Please try again.');
             setLoading(false);
         }
     };

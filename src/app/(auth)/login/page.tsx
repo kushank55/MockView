@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { AUTH_ERRORS } from '@/lib/auth-errors';
+import { AUTH_ERRORS, oauthErrorMessage } from '@/lib/auth-errors';
 import DemoLoginButton from '@/components/ui/DemoLoginButton';
 import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
 import Link from 'next/link';
@@ -29,11 +29,7 @@ export default function LoginPage() {
     React.useEffect(() => {
         const oauthError = new URLSearchParams(window.location.search).get('error');
         if (!oauthError) return;
-        setError(
-            oauthError === 'OAuthAccountNotLinked'
-                ? 'This email already has an account. Sign in with email and password.'
-                : 'Google sign-in was cancelled or failed. Please try again.'
-        );
+        setError(oauthErrorMessage(oauthError));
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -97,7 +93,7 @@ export default function LoginPage() {
                     </div>
                 )}
 
-                <GoogleSignInButton />
+                <GoogleSignInButton onError={setError} />
 
                 <div className={styles.demoDivider}>
                     <span>or continue with email</span>

@@ -4,19 +4,31 @@ import NextAuth, { type NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import GoogleProvider from 'next-auth/providers/google';
 import { PrismaAdapter } from '@auth/prisma-adapter';
+import type { Adapter } from 'next-auth/adapters';
 import bcrypt from 'bcryptjs';
 import { db } from './db';
 import { AUTH_ERRORS } from './auth-errors';
-import { ensureDemoUser } from './demo';
+import { DEMO_EMAIL, ensureDemoUser } from './demo';
+
+/**
+ * Dynamic lookup so Next.js cannot replace `process.env.GOOGLE_CLIENT_ID`
+ * with an empty string at build time (which is what happened locally, and
+ * would also disable Google on Vercel even after the keys are added).
+ */
+function runtimeEnv(key: string): string {
+    const bag: Record<string, string | undefined> = process.env;
+    return (bag[key] ?? '').trim();
+}
 
 /**
  * Next.js/Turbopack can snapshot process.env with empty GOOGLE_CLIENT_* keys,
- * so later .env values never reach NextAuth. Read the key from process.env
- * first, then fall back to parsing `.env` directly.
+ * so later .env values never reach NextAuth. Fall back to parsing `.env`.
+ * On Vercel there is no `.env` file — keys must come from project env vars.
  */
 function readProjectEnv(key: string): string {
-    const fromProcess = process.env[key]?.trim();
+    const fromProcess = runtimeEnv(key);
     if (fromProcess) return fromProcess;
+    if (process.env.VERCEL) return '';
 
     const envPath = resolve(process.cwd(), '.env');
     if (!existsSync(envPath)) return '';
@@ -39,7 +51,57 @@ function readProjectEnv(key: string): string {
     return '';
 }
 
+/** Localhost NEXTAUTH_URL copied to Vercel makes Google redirect to your laptop. */
+function applyVercelAuthUrl() {
+    if (!process.env.VERCEL) return;
+    const current = runtimeEnv('NEXTAUTH_URL');
+    const looksLocal = !current || /localhost|127\.0\.0\.1/i.test(current);
+    if (!looksLocal) return;
+
+    const host = (
+        process.env.VERCEL_ENV === 'production'
+            ? process.env.VERCEL_PROJECT_PRODUCTION_URL || process.env.VERCEL_URL
+            : process.env.VERCEL_URL
+    )?.replace(/^https?:\/\//, '');
+    if (host) process.env.NEXTAUTH_URL = `https://${host}`;
+}
+
+/**
+ * Demo is a shared playground account. NextAuth will otherwise *link* Google
+ * onto whoever is already signed in — so "Continue with Google" after trying
+ * the demo silently keeps you as Demo User. Treat the demo session as signed
+ * out during OAuth, and never resolve a Google account that was already tied
+ * to demo@mockview.ai.
+ */
+function createAuthAdapter(): Adapter {
+    const base = PrismaAdapter(db) as Adapter;
+    return {
+        ...base,
+        async getUser(id) {
+            const user = await base.getUser?.(id);
+            if (user?.email === DEMO_EMAIL) return null;
+            return user ?? null;
+        },
+        async getUserByAccount(providerAccount) {
+            const user = await base.getUserByAccount?.(providerAccount);
+            if (user?.email === DEMO_EMAIL) return null;
+            return user ?? null;
+        },
+    };
+}
+
+async function unlinkGoogleFromDemo(providerAccountId: string) {
+    await db.account.deleteMany({
+        where: {
+            provider: 'google',
+            providerAccountId,
+            user: { email: DEMO_EMAIL },
+        },
+    });
+}
+
 export function getAuthOptions(): NextAuthOptions {
+    applyVercelAuthUrl();
     const googleClientId = readProjectEnv('GOOGLE_CLIENT_ID');
     const googleClientSecret = readProjectEnv('GOOGLE_CLIENT_SECRET');
 
@@ -58,12 +120,13 @@ export function getAuthOptions(): NextAuthOptions {
 
     if (googleProvider.length === 0) {
         console.warn(
-            'Google sign-in is disabled: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing from .env'
+            'Google sign-in is disabled: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is missing. On Vercel, set both in Project Settings → Environment Variables and redeploy.'
         );
     }
 
     return {
-        adapter: PrismaAdapter(db) as NextAuthOptions['adapter'],
+        adapter: createAuthAdapter(),
+        secret: readProjectEnv('NEXTAUTH_SECRET') || undefined,
         session: {
             strategy: 'jwt',
         },
@@ -143,9 +206,18 @@ export function getAuthOptions(): NextAuthOptions {
             }),
         ],
         callbacks: {
+            async signIn({ account }) {
+                if (account?.provider === 'google' && account.providerAccountId) {
+                    await unlinkGoogleFromDemo(account.providerAccountId);
+                }
+                return true;
+            },
             async jwt({ token, user }) {
                 if (user) {
                     token.id = user.id;
+                    token.name = user.name;
+                    token.email = user.email;
+                    token.picture = user.image;
                 }
                 if (!token.id && token.sub) {
                     token.id = token.sub;
@@ -155,6 +227,9 @@ export function getAuthOptions(): NextAuthOptions {
             async session({ session, token }) {
                 if (session.user) {
                     (session.user as { id: string }).id = token.id as string;
+                    if (typeof token.name === 'string') session.user.name = token.name;
+                    if (typeof token.email === 'string') session.user.email = token.email;
+                    if (typeof token.picture === 'string') session.user.image = token.picture;
                 }
                 return session;
             },

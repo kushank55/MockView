@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
+import { oauthErrorMessage } from '@/lib/auth-errors';
 import Link from 'next/link';
 import {
     Sparkles,
@@ -26,6 +27,12 @@ export default function SignupPage() {
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
+
+    React.useEffect(() => {
+        const oauthError = new URLSearchParams(window.location.search).get('error');
+        if (!oauthError) return;
+        setError(oauthErrorMessage(oauthError));
+    }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -108,7 +115,7 @@ export default function SignupPage() {
                     </div>
                 )}
 
-                <GoogleSignInButton label="Sign up with Google" />
+                <GoogleSignInButton label="Sign up with Google" onError={setError} />
 
                 <div className={styles.demoDivider}>
                     <span>or continue with email</span>
