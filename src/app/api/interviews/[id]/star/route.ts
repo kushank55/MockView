@@ -1,4 +1,4 @@
-import { generateGeminiText } from '@/lib/gemini';
+import { generateGeminiText, isQuotaError } from '@/lib/gemini';
 import { NextRequest } from 'next/server';
 import { jsonError } from '@/lib/http';
 import { getSessionUser } from '@/lib/session';
@@ -71,6 +71,13 @@ export async function POST(
         return Response.json({ success: true, ...starData });
     } catch (error) {
         console.error('POST /api/interviews/[id]/star error:', error);
-        return jsonError(500, 'STAR_REWRITE_FAILED', 'Failed to generate STAR response');
+        const quota = isQuotaError(error);
+        return jsonError(
+            quota ? 429 : 502,
+            'STAR_REWRITE_FAILED',
+            quota
+                ? 'STAR rewrite is rate-limited right now. Wait about a minute, then retry.'
+                : 'Failed to generate STAR response'
+        );
     }
 }

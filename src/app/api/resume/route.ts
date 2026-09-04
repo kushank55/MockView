@@ -68,6 +68,9 @@ export async function POST(req: NextRequest) {
         return Response.json({ success: true, ...analysis }, { status: 201 });
     } catch (error) {
         console.error('POST /api/resume error:', error);
-        return jsonError(500, 'INTERNAL_ERROR', 'Failed to create resume analysis');
+        return (
+            databaseUnreachableResponse(error) ??
+            jsonError(500, 'INTERNAL_ERROR', 'Failed to create resume analysis')
+        );
     }
 }

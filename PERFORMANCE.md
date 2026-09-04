@@ -88,7 +88,7 @@ In-memory counters do not sync across Vercel isolates. Use Redis in production i
 | Primary model | `gemini-3.5-flash-lite` | Lower latency, higher free-tier headroom for live turns |
 | Fallback | `gemini-3.6-flash` | Quality/availability if Lite fails or returns empty |
 | Timeout | 20s (`AbortSignal.timeout`) | Bound serverless wait |
-| Retries | 3 attempts, 400ms → 800ms backoff | Transient 5xx / timeout / quota only |
+| Retries | 3 attempts, 400ms → 800ms backoff | Transient 5xx / timeout only. Quota skips to the fallback model instead of hammering the same one. |
 | Chat window | last 10 messages | Drop old turns, keep recent context |
 | Resume excerpt | 4,000 chars on generate | Personalize without pasting the whole PDF |
 | Eval transcript | last 40 messages | Cap JSON eval prompt |

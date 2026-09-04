@@ -146,6 +146,10 @@ export default function SettingsPage() {
                 }),
             });
             const updated = await res.json();
+            if (!res.ok) {
+                console.error('Failed to save settings:', updated);
+                return;
+            }
             setProfile(updated);
             setSaved(true);
             setTimeout(() => setSaved(false), 2000);

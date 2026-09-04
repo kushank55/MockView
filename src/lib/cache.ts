@@ -14,6 +14,7 @@ const memory = new Map<string, MemoryEntry>();
 
 let redis: RedisClientType | null = null;
 let redisFailed = false;
+let redisRetryAt = 0;
 let connecting: Promise<RedisClientType | null> | null = null;
 
 function memoryGet(key: string): string | null {
@@ -46,16 +47,17 @@ function memoryIncr(key: string, ttlSeconds: number): number {
 
 async function getRedis(): Promise<RedisClientType | null> {
     const url = process.env.REDIS_URL?.trim();
-    if (!url || redisFailed) return null;
+    if (!url) return null;
     if (redis?.isOpen) return redis;
+    if (redisFailed && Date.now() < redisRetryAt) return null;
     if (connecting) return connecting;
 
     connecting = (async () => {
         try {
+            redisFailed = false;
             const client = createClient({ url }) as RedisClientType;
             client.on('error', (err) => {
                 console.error('Redis client error:', err);
-                redisFailed = true;
             });
             await client.connect();
             redis = client;
@@ -63,6 +65,7 @@ async function getRedis(): Promise<RedisClientType | null> {
         } catch (error) {
             console.error('Redis connect failed, using in-memory fallback:', error);
             redisFailed = true;
+            redisRetryAt = Date.now() + 15_000;
             redis = null;
             return null;
         } finally {

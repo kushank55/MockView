@@ -65,6 +65,8 @@ Caching every `GET /api/interviews` would need cache keys per filter/page and mo
 ## Impact
 Repeat dashboard loads can skip Postgres when Redis (or the process map) still has a fresh entry. Rate limits can be shared across instances when Redis is configured.
 
+A single Redis error no longer disables Redis for the rest of the process: connect failures retry after 15 seconds, and a live client is reused while `isOpen`.
+
 ## How to verify
 Hit `/api/dashboard` twice within 45s: the second JSON includes `"cached": true` on a hit. Complete an interview and confirm the next dashboard fetch is `"cached": false` (invalidation) or wait for TTL.
 

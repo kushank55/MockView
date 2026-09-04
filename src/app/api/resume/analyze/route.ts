@@ -3,7 +3,7 @@ import { cacheDel, dashboardCacheKey } from '@/lib/cache';
 import { jsonError } from '@/lib/http';
 import { getSessionUser } from '@/lib/session';
 import { clientIp, enforceAiRateLimit, rateLimitResponse } from '@/lib/rate-limit';
-import { generateGeminiText } from '@/lib/gemini';
+import { generateGeminiText, isQuotaError } from '@/lib/gemini';
 import { db } from '@/lib/db';
 import { extractPdfText } from '@/lib/pdf-text';
 
@@ -103,6 +103,13 @@ export async function POST(req: NextRequest) {
         return Response.json({ success: true, ...saved }, { status: 201 });
     } catch (error: unknown) {
         console.error('POST /api/resume/analyze error:', error);
-        return jsonError(500, 'RESUME_ANALYSIS_FAILED', 'Failed to analyze resume');
+        const quota = isQuotaError(error);
+        return jsonError(
+            quota ? 429 : 500,
+            'RESUME_ANALYSIS_FAILED',
+            quota
+                ? 'Resume analysis is rate-limited right now. Wait about a minute, then retry.'
+                : 'Failed to analyze resume'
+        );
     }
 }

@@ -32,7 +32,7 @@ export function isQuotaError(error: unknown): boolean {
 }
 
 export function isTransientGeminiError(error: unknown): boolean {
-    if (isQuotaError(error)) return true;
+    if (isQuotaError(error) || isPermanentGeminiError(error)) return false;
     const text = error instanceof Error ? error.message : String(error ?? '');
     return /503|502|504|overloaded|unavailable|ECONNRESET|ETIMEDOUT|fetch failed|network/i.test(text);
 }
@@ -107,7 +107,8 @@ export async function generateGeminiText(args: {
                 lastError = error;
                 console.error(`Gemini ${modelId} attempt ${attempt + 1} failed:`, error);
                 if (isPermanentGeminiError(error)) throw error;
-                if (!isTransientGeminiError(error) || attempt === 2) break;
+                // Quota is not worth retrying on the same model; try the fallback once.
+                if (isQuotaError(error) || !isTransientGeminiError(error) || attempt === 2) break;
                 await sleep(delay);
                 delay *= 2;
             }

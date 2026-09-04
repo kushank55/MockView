@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { jsonError } from '@/lib/http';
 import { getSessionUser } from '@/lib/session';
 import { clientIp, enforceAiRateLimit, rateLimitResponse } from '@/lib/rate-limit';
-import { generateGeminiText, MAX_EVAL_MESSAGES, trimChatMessages } from '@/lib/gemini';
+import { generateGeminiText, MAX_EVAL_MESSAGES, isQuotaError, trimChatMessages } from '@/lib/gemini';
 
 function buildEvaluationPrompt(
     transcript: Array<{ role: string; content: string }>,
@@ -75,6 +75,13 @@ export async function POST(req: NextRequest) {
         return Response.json({ success: true, ...evaluationData });
     } catch (error) {
         console.error('POST /api/interview/evaluate error:', error);
-        return jsonError(500, 'EVALUATION_FAILED', 'Failed to evaluate interview');
+        const quota = isQuotaError(error);
+        return jsonError(
+            quota ? 429 : 502,
+            'EVALUATION_FAILED',
+            quota
+                ? 'The evaluator is rate-limited right now. Wait about a minute, then retry.'
+                : 'Failed to evaluate interview'
+        );
     }
 }
