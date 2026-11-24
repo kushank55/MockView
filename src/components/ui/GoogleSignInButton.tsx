@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { signIn, signOut } from 'next-auth/react';
+import { getProviders, signIn, signOut } from 'next-auth/react';
 import styles from './GoogleSignInButton.module.css';
 
 function GoogleMark() {
@@ -39,16 +39,28 @@ export default function GoogleSignInButton({
     const [loading, setLoading] = useState(false);
 
     const handleClick = async () => {
+        onError?.('');
         setLoading(true);
         try {
-            const providers = await fetch('/api/auth/providers')
-                .then((res) => res.json())
-                .catch(() => null);
-            if (!providers?.google) {
+            const providers = await getProviders();
+            if (!providers) {
+                throw new Error('Could not load sign-in providers');
+            }
+
+            const google = providers.google;
+            if (!google) {
                 onError?.(
-                    'Google sign-in is not configured on this deployment. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel, then redeploy.'
+                    'Google sign-in is unavailable because its OAuth credentials are missing.'
                 );
                 setLoading(false);
+                return;
+            }
+
+            // The browser only returns the OAuth cookies to the host that set them.
+            const callback = new URL(google.callbackUrl);
+            if (callback.origin !== window.location.origin) {
+                const authPage = window.location.pathname === '/signup' ? '/signup' : '/login';
+                window.location.replace(new URL(authPage, callback.origin));
                 return;
             }
 

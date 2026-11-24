@@ -188,6 +188,7 @@ export function getAuthOptions(): NextAuthOptions {
         },
         pages: {
             signIn: '/login',
+            error: '/login',
         },
         providers: [
             ...googleProvider,
@@ -198,7 +199,8 @@ export function getAuthOptions(): NextAuthOptions {
                     password: { label: 'Password', type: 'password' },
                 },
                 async authorize(credentials) {
-                    if (!credentials?.email || !credentials?.password) {
+                    const email = credentials?.email?.trim();
+                    if (!email || !credentials?.password) {
                         throw new Error(AUTH_ERRORS.INVALID_CREDENTIALS);
                     }
 
@@ -209,8 +211,17 @@ export function getAuthOptions(): NextAuthOptions {
                     let user;
                     try {
                         user = await db.user.findUnique({
-                            where: { email: credentials.email },
+                            where: { email },
                         });
+                        if (!user) {
+                            // Older registrations stored the submitted casing. Only use
+                            // a case-insensitive match when it identifies one account.
+                            const matches = await db.user.findMany({
+                                where: { email: { equals: email, mode: 'insensitive' } },
+                                take: 2,
+                            });
+                            if (matches.length === 1) user = matches[0];
+                        }
                     } catch (error) {
                         console.error('Auth database lookup failed:', error);
                         throw new Error(AUTH_ERRORS.SERVICE_UNAVAILABLE);

@@ -21,12 +21,12 @@ export function oauthErrorMessage(code: string): string {
         case 'OAuthAccountNotLinked':
             return 'This email already has an account. Sign in with email and password.';
         case 'Configuration':
-            return 'Google sign-in is not configured on this deployment. Add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in Vercel, then redeploy.';
+            return 'Sign-in is temporarily unavailable because of a server configuration issue.';
         case 'OAuthCallback':
         case 'Callback':
-            return 'Google rejected the redirect URL. In Google Cloud Console, add this site as an origin and {origin}/api/auth/callback/google as an Authorized redirect URI.';
+            return 'Google sign-in could not finish. Start a new attempt here and complete it in the same tab.';
         case 'AccessDenied':
-            return 'Google sign-in was cancelled.';
+            return 'Google sign-in was denied or cancelled.';
         default:
             return 'Google sign-in was cancelled or failed. Please try again.';
     }

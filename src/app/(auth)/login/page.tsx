@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import { AUTH_ERRORS, oauthErrorMessage } from '@/lib/auth-errors';
 import DemoLoginButton from '@/components/ui/DemoLoginButton';
 import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
@@ -19,17 +18,18 @@ import {
 import styles from '../auth.module.css';
 
 export default function LoginPage() {
-    const router = useRouter();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
+    const [registered, setRegistered] = useState(false);
     const [loading, setLoading] = useState(false);
 
     React.useEffect(() => {
-        const oauthError = new URLSearchParams(window.location.search).get('error');
-        if (!oauthError) return;
-        setError(oauthErrorMessage(oauthError));
+        const params = new URLSearchParams(window.location.search);
+        const oauthError = params.get('error');
+        if (oauthError) setError(oauthErrorMessage(oauthError));
+        if (params.get('registered') === '1') setRegistered(true);
     }, []);
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -44,17 +44,18 @@ export default function LoginPage() {
                 redirect: false,
             });
 
-            if (res?.error) {
+            if (!res?.ok || res.error) {
                 // A service outage previously showed "Invalid email or password",
                 // which sent people off resetting a password that was fine.
                 setError(
-                    res.error.includes(AUTH_ERRORS.SERVICE_UNAVAILABLE)
+                    res?.error?.includes(AUTH_ERRORS.SERVICE_UNAVAILABLE)
                         ? 'Database not reached. Please try again in a moment.'
-                        : 'Invalid email or password'
+                        : res?.error === AUTH_ERRORS.INVALID_CREDENTIALS || res?.error === 'CredentialsSignin'
+                            ? 'Invalid email or password'
+                            : 'Sign-in could not finish. Please try again.'
                 );
             } else {
-                router.push('/dashboard');
-                router.refresh();
+                window.location.assign('/dashboard');
             }
         } catch {
             setError('Something went wrong. Please try again.');
@@ -87,10 +88,13 @@ export default function LoginPage() {
                 </div>
 
                 {error && (
-                    <div className={styles.error}>
+                    <div className={styles.error} role="alert">
                         <AlertCircle size={16} />
                         <span>{error}</span>
                     </div>
+                )}
+                {registered && !error && (
+                    <p className={styles.subtitle} role="status">Account created. Sign in to continue.</p>
                 )}
 
                 <GoogleSignInButton onError={setError} />

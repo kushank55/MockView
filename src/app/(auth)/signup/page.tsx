@@ -2,7 +2,6 @@
 
 import React, { useState } from 'react';
 import { signIn } from 'next-auth/react';
-import { useRouter } from 'next/navigation';
 import GoogleSignInButton from '@/components/ui/GoogleSignInButton';
 import { oauthErrorMessage } from '@/lib/auth-errors';
 import { apiErrorMessage } from '@/lib/api-errors';
@@ -20,7 +19,6 @@ import {
 import styles from '../auth.module.css';
 
 export default function SignupPage() {
-    const router = useRouter();
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -67,18 +65,12 @@ export default function SignupPage() {
             }
 
             const signInRes = await signIn('credentials', {
-                email,
+                email: registerData.email,
                 password,
                 redirect: false,
-            });
+            }).catch(() => undefined);
 
-            if (signInRes?.error) {
-                setError('Account created! Please sign in.');
-                router.push('/login');
-            } else {
-                router.push('/dashboard');
-                router.refresh();
-            }
+            window.location.assign(signInRes?.ok && !signInRes.error ? '/dashboard' : '/login?registered=1');
         } catch {
             setError('Something went wrong. Please try again.');
         } finally {
@@ -110,7 +102,7 @@ export default function SignupPage() {
                 </div>
 
                 {error && (
-                    <div className={styles.error}>
+                    <div className={styles.error} role="alert">
                         <AlertCircle size={16} />
                         <span>{error}</span>
                     </div>

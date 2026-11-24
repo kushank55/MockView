@@ -147,8 +147,14 @@ DIRECT_URL="postgresql://...:5432/postgres"
 NEXTAUTH_URL="http://localhost:3000"
 NEXTAUTH_SECRET="generate-with-openssl-rand-base64-32"
 
+# Optional Google sign-in. Use a Google OAuth Web application client.
+GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_SECRET=""
+
 GOOGLE_GENERATIVE_AI_API_KEY="your-gemini-api-key"
 ```
+
+For Google sign-in, add `http://localhost:3000/api/auth/callback/google` to the OAuth client's authorized redirect URIs and open the app at `http://localhost:3000`. Add the production `/api/auth/callback/google` URL too if you use Google sign-in on Vercel, and set both OAuth credentials in the Vercel environment.
 
 ### 3. Database
 
