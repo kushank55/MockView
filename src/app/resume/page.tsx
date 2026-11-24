@@ -30,6 +30,7 @@ import ProgressRing from '@/components/ui/ProgressRing';
 import { getScoreColor, getScoreLabel } from '@/lib/utils';
 import DatabaseUnreachable from '@/components/ui/DatabaseUnreachable';
 import { isDatabaseUnreachableResponse, apiErrorMessage } from '@/lib/api-errors';
+import { isResumePdf, MAX_RESUME_UPLOAD_BYTES, RESUME_UPLOAD_LIMIT_MESSAGE } from '@/lib/resume-upload';
 import styles from './resume.module.css';
 
 // ── Types ──
@@ -41,6 +42,7 @@ interface ResumeAnalysis {
     keywordData: { keyword: string; count: number; relevance: number; found: boolean }[];
     sectionScores: { label: string; score: number }[];
     improvements: { severity: string; title: string; description: string }[];
+    analysisSource?: 'checklist';
     createdAt: string;
 }
 
@@ -157,12 +159,13 @@ export default function ResumePage() {
 
     // ── File handlers ──
     const handleFileSelect = (file: File) => {
-        if (file.type !== 'application/pdf') {
+        setSelectedFile(null);
+        if (!isResumePdf(file)) {
             setError('Please upload a PDF file.');
             return;
         }
-        if (file.size > 10 * 1024 * 1024) {
-            setError('File size must be under 10MB.');
+        if (file.size > MAX_RESUME_UPLOAD_BYTES) {
+            setError(RESUME_UPLOAD_LIMIT_MESSAGE);
             return;
         }
         setError('');
@@ -210,11 +213,14 @@ export default function ResumePage() {
                 body: formData,
             });
 
-            const data = await res.json();
+            const data = await res.json().catch(() => null);
 
             if (!res.ok) {
-                throw new Error(apiErrorMessage(data, 'Analysis failed'));
+                throw new Error(apiErrorMessage(data, res.status === 413
+                    ? RESUME_UPLOAD_LIMIT_MESSAGE
+                    : 'Resume analysis could not finish. Please try again.'));
             }
+            if (!data?.success) throw new Error('Resume analysis returned an unreadable result. Please try again.');
 
             setAnalysis(data);
             setSelectedFile(null);
@@ -359,7 +365,7 @@ export default function ResumePage() {
                                     </div>
                                     <h3 className={styles.dropTitle}>Drop your resume here</h3>
                                     <p className={styles.dropDesc}>
-                                        PDF files supported • Max 10MB
+                                        PDF files supported • Max 4 MB
                                     </p>
                                     <div className={styles.dropDivider}>
                                         <span>or</span>
@@ -488,10 +494,11 @@ export default function ResumePage() {
     const keywordData = analysis.keywordData;
     const sectionScores = analysis.sectionScores;
     const improvements = analysis.improvements;
+    const isChecklist = analysis.analysisSource === 'checklist';
 
     return (
         <div className={styles.page}>
-            <Header title="Resume Analysis" subtitle="AI-powered resume intelligence report" />
+            <Header title="Resume Analysis" subtitle={isChecklist ? 'Basic resume check' : 'AI-powered resume intelligence report'} />
 
             {/* Top Score Section */}
             <motion.div
@@ -509,7 +516,7 @@ export default function ResumePage() {
                                 color={getScoreColor(atsScore)}
                             >
                                 <span className={styles.atsValue}>{atsScore}</span>
-                                <span className={styles.atsLabel}>ATS Score</span>
+                                <span className={styles.atsLabel}>{isChecklist ? 'Checklist Score' : 'ATS Score'}</span>
                             </ProgressRing>
                         </div>
                         <div className={styles.scoreRight}>
@@ -525,8 +532,10 @@ export default function ResumePage() {
                             </div>
                             <h3 className={styles.scoreTitle}>Resume Health Report</h3>
                             <p className={styles.scoreDesc}>
-                                Your resume scores <strong>{atsScore}/100</strong> for the <strong>{analysis.targetRole || 'general'}</strong> role.
-                                There are <strong>{improvements.length} improvements</strong> that could boost your score.
+                                {isChecklist ? 'Gemini was unavailable for this analysis. This score reflects section presence and keyword matches.' : (
+                                    <>Your resume scores <strong>{atsScore}/100</strong> for the <strong>{analysis.targetRole || 'general'}</strong> role.
+                                    There are <strong>{improvements.length} improvements</strong> that could boost your score.</>
+                                )}
                             </p>
                             <div className={styles.scoreActions}>
                                 <Button size="sm" variant="secondary" icon={<RefreshCw size={14} />} onClick={handleNewAnalysis}>
@@ -591,7 +600,7 @@ export default function ResumePage() {
                     >
                         <Card>
                             <h3 className={styles.cardTitle}>
-                                <Search size={16} /> Role-Specific Keywords
+                                <Search size={16} /> {isChecklist ? 'Keyword Checks' : 'Role-Specific Keywords'}
                             </h3>
                             <div className={styles.keywordGrid}>
                                 {keywordData.map((kw, i) => (
@@ -635,7 +644,7 @@ export default function ResumePage() {
                     >
                         <Card>
                             <h3 className={styles.cardTitle}>
-                                <Lightbulb size={16} /> AI Improvement Suggestions
+                                <Lightbulb size={16} /> {isChecklist ? 'Improvement Suggestions' : 'AI Improvement Suggestions'}
                             </h3>
                             <div className={styles.improvementList}>
                                 {improvements.map((imp, i) => {

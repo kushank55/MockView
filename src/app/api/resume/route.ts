@@ -3,6 +3,7 @@ import { databaseUnreachableResponse, db } from '@/lib/db';
 import { cacheDel, dashboardCacheKey } from '@/lib/cache';
 import { jsonError, parsePageLimit, paginationMeta } from '@/lib/http';
 import { getSessionUser } from '@/lib/session';
+import { formatResumeReport } from '@/lib/resume-checklist';
 
 export async function GET(req: NextRequest) {
     try {
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
 
         return Response.json({
             success: true,
-            analyses,
+            analyses: analyses.map(formatResumeReport),
             pagination: paginationMeta(page, limit, total),
         });
     } catch (error) {
