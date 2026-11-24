@@ -16,6 +16,7 @@ let redis: RedisClientType | null = null;
 let redisFailed = false;
 let redisRetryAt = 0;
 let connecting: Promise<RedisClientType | null> | null = null;
+const REDIS_TIMEOUT_MS = 1_000;
 
 function memoryGet(key: string): string | null {
     const row = memory.get(key);
@@ -48,18 +49,35 @@ function memoryIncr(key: string, ttlSeconds: number): number {
 async function getRedis(): Promise<RedisClientType | null> {
     const url = process.env.REDIS_URL?.trim();
     if (!url) return null;
-    if (redis?.isOpen) return redis;
+    if (redis?.isReady) return redis;
     if (redisFailed && Date.now() < redisRetryAt) return null;
     if (connecting) return connecting;
 
     connecting = (async () => {
         try {
             redisFailed = false;
-            const client = createClient({ url }) as RedisClientType;
+            // Awaiting Redis must not hold open a request while the optional
+            // cache is offline. A later request can reconnect after cooldown.
+            const client = createClient({
+                url,
+                disableOfflineQueue: true,
+                socket: {
+                    connectTimeout: REDIS_TIMEOUT_MS,
+                    reconnectStrategy: false,
+                },
+                commandOptions: { timeout: REDIS_TIMEOUT_MS },
+            }) as RedisClientType;
             client.on('error', (err) => {
                 console.error('Redis client error:', err);
             });
-            await client.connect();
+            const handshakeDeadline = setTimeout(() => {
+                if (client.isOpen && !client.isReady) client.destroy();
+            }, 2 * REDIS_TIMEOUT_MS);
+            try {
+                await client.connect();
+            } finally {
+                clearTimeout(handshakeDeadline);
+            }
             redis = client;
             return client;
         } catch (error) {
@@ -68,10 +86,10 @@ async function getRedis(): Promise<RedisClientType | null> {
             redisRetryAt = Date.now() + 15_000;
             redis = null;
             return null;
-        } finally {
-            connecting = null;
         }
-    })();
+    })().finally(() => {
+        connecting = null;
+    });
 
     return connecting;
 }
